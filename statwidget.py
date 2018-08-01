@@ -1,3 +1,5 @@
+import pandas as pd
+
 from  PyQt5.QtCore  import QAbstractItemModel, pyqtSignal, QSize, QFile, QIODevice, QModelIndex, Qt, pyqtSlot, QVariant, QItemSelectionModel
 from PyQt5.QtWidgets import QSizePolicy, QTreeView, QAbstractScrollArea, QSpinBox, QToolButton, QHeaderView, QAbstractItemView, QApplication, QLabel, QTreeView, QComboBox, QCheckBox, QWidget, QPushButton, QHBoxLayout, QFrame, QTableView, QGroupBox, QDialog, QVBoxLayout, QLabel, QGridLayout
 from PyQt5 import QtCore, QtWidgets, QtGui
@@ -727,15 +729,16 @@ class StatsGui(QWidget):
             # This causes an error when it runs
 #             sel_mod.select(index, QItemSelectionModel.Select|QItemSelectionModel.Rows)
             self.treeview.setCurrentIndex(index)
-    
+
         self.treeview.setSelectionModel(sel_mod)
-            
-            
-app = QApplication.instance()
-if app is None:
-    app = QApplication(sys.argv)
-else:
-    print('QApplication instance already exists: %s' % str(app))
-ex = StatsGui(dc)
-ex.show()
-sys.exit(app.exec_())
+
+
+if __name__ == '__main__':
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+    else:
+        print('QApplication instance already exists: %s' % str(app))
+    ex = StatsGui(dc)
+    ex.show()
+    sys.exit(app.exec_())
