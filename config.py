@@ -1,3 +1,4 @@
+
 from glue.config import menubar_plugin
 from statwidget import StatsGui
 
