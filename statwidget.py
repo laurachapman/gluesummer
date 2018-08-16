@@ -276,8 +276,6 @@ class StatsGui(QWidget, HubListener):
         if it is newly selected, add it to the table
         if it is newly deselected, remove it from the table
         '''
-          
-        print("myPressedEvent called")
 
         # Get the indexes of all the selected components
         self.selected_indices = self.treeview.selectionModel().selectedRows()
@@ -373,7 +371,6 @@ class StatsGui(QWidget, HubListener):
         '''
         Runs statistics for the component comp_i of data set data_i
         '''
-        print("runDataStats called")
 
         subset_label = "--"
         data_label = self.dc[data_i].label   
@@ -387,21 +384,10 @@ class StatsGui(QWidget, HubListener):
             try:
                 column_data = self.cache_stash[cache_key]
             except:
-                pass
-        
-        else:         
-        # Find the stat values
-        # Save the data in the cache 
-            mean_val = self.dc[data_i].compute_statistic('mean', self.dc[data_i].components[comp_i])
-            median_val = self.dc[data_i].compute_statistic('median', self.dc[data_i].components[comp_i])     
-            min_val = self.dc[data_i].compute_statistic('minimum', self.dc[data_i].components[comp_i])     
-            max_val = self.dc[data_i].compute_statistic('maximum', self.dc[data_i].components[comp_i])    
-            sum_val = self.dc[data_i].compute_statistic('sum', self.dc[data_i].components[comp_i])
-
-            column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val]]).transpose()
-            
-            self.cache_stash[cache_key] = column_data
-        
+                column_data = self.newDataStats(data_i, comp_i)
+        else:
+            column_data = self.newDataStats(data_i, comp_i)    
+     
         # Save the accurate data in self.data_accurate
         column_df = pd.DataFrame(column_data, columns=self.headings)
         self.data_accurate = self.data_accurate.append(column_df, ignore_index=True)        
@@ -424,12 +410,34 @@ class StatsGui(QWidget, HubListener):
         column_df = pd.DataFrame(column_data, columns=self.headings)
         self.data_frame = self.data_frame.append(column_df, ignore_index=True)
     
+    def newDataStats(self, data_i, comp_i):
+        # Generates new data for a dataset that has to be calculated
+
+        subset_label = "--"
+        data_label = self.dc[data_i].label   
+        comp_label = self.dc[data_i].components[comp_i].label # add to the name array to build the table
+        
+        # Build the cache key
+        cache_key = subset_label + data_label + comp_label
+
+        # Find the stat values
+        # Save the data in the cache 
+        mean_val = self.dc[data_i].compute_statistic('mean', self.dc[data_i].components[comp_i])
+        median_val = self.dc[data_i].compute_statistic('median', self.dc[data_i].components[comp_i])     
+        min_val = self.dc[data_i].compute_statistic('minimum', self.dc[data_i].components[comp_i])     
+        max_val = self.dc[data_i].compute_statistic('maximum', self.dc[data_i].components[comp_i])    
+        sum_val = self.dc[data_i].compute_statistic('sum', self.dc[data_i].components[comp_i])
+
+        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val]]).transpose()
+            
+        self.cache_stash[cache_key] = column_data
+
+        return column_data
+
     def runSubsetStats (self, subset_i, data_i, comp_i):
         '''
         Runs statistics for the subset subset_i with respect to the component comp_i of data set data_i
         '''
-
-        print("runSubsetStats called")
 
         subset_label = self.dc[data_i].subsets[subset_i].label
         data_label = self.dc[data_i].label   
@@ -1080,8 +1088,8 @@ class StatsGui(QWidget, HubListener):
             subset_name = str(message)[index1:index2]
             self.updateStats(subset_name)  
 
-        # Handle an updated style or label
-        if "Updated label" in str(message) or "Updated style" in str(message):
+        # Handle an updated style, label, or new subset
+        if "Updated label" in str(message) or "Updated style" in str(message) or "SubsetCreateMessage" in str(message):
             # Refresh the table and the treeview but don't change values
             if self.component_mode:
                 index_dict = self.component_dict
@@ -1101,6 +1109,8 @@ class StatsGui(QWidget, HubListener):
                     pass
 
                 self.sortByComponents()
+                # Expand the tree to see the changes
+                self.expandClicked()
 
             #         # Select the correct rows 
             # for i in range(0, len(selected)):
@@ -1127,7 +1137,9 @@ class StatsGui(QWidget, HubListener):
                 except:
                     pass
 
-            self.sortBySubsets()
+                self.sortBySubsets()
+                # Expand the tree to see the changes
+                self.expandClicked()
 
             # Select the correct rows 
             for i in range(0, len(selected)):
