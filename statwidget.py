@@ -99,7 +99,7 @@ class StatsGui(QWidget, HubListener):
         QWidget.__init__(self)
         HubListener.__init__(self)  
         
-        self.setWindowFlags(Qt.Sheet)
+        self.setWindowFlags(Qt.Tool)
 
         # Set no_update to true
         self.no_update = True
@@ -276,7 +276,9 @@ class StatsGui(QWidget, HubListener):
         if it is newly selected, add it to the table
         if it is newly deselected, remove it from the table
         '''
-            
+          
+        print("myPressedEvent called")
+
         # Get the indexes of all the selected components
         self.selected_indices = self.treeview.selectionModel().selectedRows()
 
@@ -371,6 +373,7 @@ class StatsGui(QWidget, HubListener):
         '''
         Runs statistics for the component comp_i of data set data_i
         '''
+        print("runDataStats called")
 
         subset_label = "--"
         data_label = self.dc[data_i].label   
@@ -380,11 +383,13 @@ class StatsGui(QWidget, HubListener):
         cache_key = subset_label + data_label + comp_label
         
         # See if the values have already been cached
-        try:
-            if self.no_update:
+        if self.no_update:
+            try:
                 column_data = self.cache_stash[cache_key]
+            except:
+                pass
         
-        except:         
+        else:         
         # Find the stat values
         # Save the data in the cache 
             mean_val = self.dc[data_i].compute_statistic('mean', self.dc[data_i].components[comp_i])
@@ -424,6 +429,8 @@ class StatsGui(QWidget, HubListener):
         Runs statistics for the subset subset_i with respect to the component comp_i of data set data_i
         '''
 
+        print("runSubsetStats called")
+
         subset_label = self.dc[data_i].subsets[subset_i].label
         data_label = self.dc[data_i].label   
         comp_label = self.dc[data_i].components[comp_i].label # add to the name array to build the table
@@ -431,24 +438,15 @@ class StatsGui(QWidget, HubListener):
         # Build the cache key
         cache_key = subset_label + data_label + comp_label
         
-        # See if the statistics are already in the cache
-        try:
-            if self.no_update:
+        # See if the statistics are already in the cache if nothing needs to be updated
+        
+        if self.no_update:
+            try:
                 column_data = self.cache_stash[cache_key]
-        
-        # Find the stats if not in the cache
-        # Save in the cache
-        
-        except:
-            mean_val = self.dc[data_i].compute_statistic('mean', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc[data_i].subsets[subset_i].subset_state)
-            median_val = self.dc[data_i].compute_statistic('median', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state)       
-            min_val = self.dc[data_i].compute_statistic('minimum', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state)       
-            max_val = self.dc[data_i].compute_statistic('maximum', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state)      
-            sum_val = self.dc[data_i].compute_statistic('sum', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state) 
-
-            column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val]]).transpose()
-
-            self.cache_stash[cache_key] = column_data
+            except:
+                column_data = self.newSubsetStats(subset_i, data_i, comp_i)
+        else:
+            column_data = self.newSubsetStats(subset_i, data_i, comp_i)
         
         # Save the data in self.data_accurate
         column_df = pd.DataFrame(column_data, columns=self.headings)
@@ -470,7 +468,28 @@ class StatsGui(QWidget, HubListener):
         # Create the column data array and append it to the data frame
         column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val]]).transpose()
         column_df = pd.DataFrame(column_data, columns=self.headings)
-        self.data_frame = self.data_frame.append(column_df, ignore_index=True)    
+        self.data_frame = self.data_frame.append(column_df, ignore_index=True)  
+
+    def newSubsetStats(self, subset_i, data_i, comp_i):
+        # Generates new data for a subset that needs to be calculated
+        subset_label = self.dc[data_i].subsets[subset_i].label
+        data_label = self.dc[data_i].label   
+        comp_label = self.dc[data_i].components[comp_i].label # add to the name array to build the table
+
+        # Build the cache key
+        cache_key = subset_label + data_label + comp_label
+
+        mean_val = self.dc[data_i].compute_statistic('mean', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc[data_i].subsets[subset_i].subset_state)
+        median_val = self.dc[data_i].compute_statistic('median', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state)       
+        min_val = self.dc[data_i].compute_statistic('minimum', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state)       
+        max_val = self.dc[data_i].compute_statistic('maximum', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state)      
+        sum_val = self.dc[data_i].compute_statistic('sum', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state) 
+
+        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val]]).transpose()
+
+        self.cache_stash[cache_key] = column_data  
+
+        return column_data
     
     def sigchange(self, i):
         # Set the number of significant figures according to what the user selects
@@ -1016,55 +1035,72 @@ class StatsGui(QWidget, HubListener):
         # Find the indices of that subset in the treeview and uncheck/recheck in treeview
         # myPressedEvent and run stats will handle the rest
         selected_items = []
-        selected_names = []
+        indices = []
 
         if self.component_mode:
             for i in range(0, len(self.selected_indices)):
+                # Get the selected items
                 selected_items.append(self.model_components.itemFromIndex(self.selected_indices[i]))
-                selected_names.append(selected_items[i].text())
-            indices = np.asarray(np.where(selected_names == subset))[0]
-            for i in range(0, len(indices)):
-                self.model_components.itemFromIndex(indices[i]).setCheckState(Qt.Unchecked)
-                self.model_components.itemFromIndex(indices[i]).setCheckState(Qt.Checked)
+                # If it's the right subset, add it to the indices
+                if selected_items[i].text() == subset:
+                    indices.append(self.selected_indices[i])
+
         else:
             for i in range(0, len(self.selected_indices)):
+                # Get the selected items
                 selected_items.append(self.model_subsets.itemFromIndex(self.selected_indices[i]))
-                selected_names.append(selected_items[i].parent().parent().text())
-            indices = np.asarray(np.where(selected_names == subset))[0]
-            for i in range(0, len(indices)):
-                self.model_subsets.itemFromIndex(indices[i]).setCheckState(Qt.Unchecked)
-                self.model_subsets.itemFromIndex(indices[i]).setCheckState(Qt.Checked)
+                # Get the names of the selected items
+                if selected_items[i].parent().parent().text() == subset:
+                    indices.append(self.selected_indices[i])
+
+        sel_mod = self.treeview.selectionModel()
+
+        for i in range(0, len(indices)):
+            # Deselect from treeview
+            self.treeview.setCurrentIndex(indices[i])
+            sel_mod.clearCurrentIndex()
+        self.treeview.setSelectionModel(sel_mod)
+
+        for i in range(0, len(indices)):
+            # Reselect in treeview
+            self.treeview.setCurrentIndex(indices[i])
+            # self.model_subsets.itemFromIndex(indices[i]).setCheckState(Qt.Checked)
 
     def messageReceived(self, message):
         self.no_update = False
         print("Message received:")
         print("{0}".format(message))
 
+        # Handle an updated subset state
         if "Updated subset_state" in str(message):
+            # Redo the stats
             # Get the subset that was updated
             index1 = str(message).index("Sent from: Subset: ") + len("Sent from: Subset: ")
             index2 = str(message).index(" (data: ")
             subset_name = str(message)[index1:index2]
             self.updateStats(subset_name)  
 
-        if self.component_mode:
-            index_dict = self.component_dict
+        # Handle an updated style or label
+        if "Updated label" in str(message) or "Updated style" in str(message):
+            # Refresh the table and the treeview but don't change values
+            if self.component_mode:
+                index_dict = self.component_dict
 
-            # Save the selected rows from the component view
-            try:
-                selected = dict()
-                for i in range(0, len(self.selected_indices)):
-                    item = self.model_components.itemFromIndex(self.selected_indices[i])
-                    if item.row() != 0:
-                        key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-                        selected[key] = item.index()
-                    else:
-                        key = item.text() + item.parent().text()
-                        selected[key] = item.index() 
-            except:
-                pass
+                # Save the selected rows from the component view
+                try:
+                    selected = dict()
+                    for i in range(0, len(self.selected_indices)):
+                        item = self.model_components.itemFromIndex(self.selected_indices[i])
+                        if item.row() != 0:
+                            key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
+                            selected[key] = item.index()
+                        else:
+                            key = item.text() + item.parent().text()
+                            selected[key] = item.index() 
+                except:
+                    pass
 
-            self.sortByComponents()
+                self.sortByComponents()
 
             #         # Select the correct rows 
             # for i in range(0, len(selected)):
@@ -1073,31 +1109,31 @@ class StatsGui(QWidget, HubListener):
             #     print(type(index))
             #     self.treeview.setCurrentIndex(index)
 
-        else:
-            index_dict = self.subset_dict
+            else:
+                index_dict = self.subset_dict
 
             # Save the selected rows from the subset view if applicable
-            try:
-                selected = dict()
+                try:
+                    selected = dict()
 
-                for i in range(0, len(self.selected_indices)):
-                    item = self.model_subsets.itemFromIndex(self.selected_indices[i])
-                    if item.parent().parent().text() == "Data":
-                        key =  "All data (" + item.parent().text() + ")" + item.text()
-                        selected[key] = item.index()
-                    else:
-                        key = item.parent().text() + item.text()
-                        selected[key] = item.index()
-            except:
-                pass
+                    for i in range(0, len(self.selected_indices)):
+                        item = self.model_subsets.itemFromIndex(self.selected_indices[i])
+                        if item.parent().parent().text() == "Data":
+                            key =  "All data (" + item.parent().text() + ")" + item.text()
+                            selected[key] = item.index()
+                        else:
+                            key = item.parent().text() + item.text()
+                            selected[key] = item.index()
+                except:
+                    pass
 
             self.sortBySubsets()
 
-        # Select the correct rows 
-        for i in range(0, len(selected)):
-            key = list(selected.keys())[i]
-            index = index_dict[key]
-            self.treeview.setCurrentIndex(index)
+            # Select the correct rows 
+            for i in range(0, len(selected)):
+                key = list(selected.keys())[i]
+                index = index_dict[key]
+                self.treeview.setCurrentIndex(index)
 
 
         # # BELOW CODE SHOULD BE ABLE TO REPLACE LINES 1003-1047
