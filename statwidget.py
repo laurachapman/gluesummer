@@ -95,10 +95,12 @@ class StatsGui(QWidget, HubListener):
     def __init__(self, dc):
         print("Hello")
 
-        # Initialize the object as a QWidget
+        # Initialize the object as a QWidget with a HubListener
         QWidget.__init__(self)
         HubListener.__init__(self)  
         
+        self.setWindowFlags(Qt.Sheet)
+
         # Set no_update to true
         self.no_update = True
         
@@ -123,6 +125,7 @@ class StatsGui(QWidget, HubListener):
         
         # Set up the QTableView Widget
         self.table = QTableView(self)
+        self.table.setSelectionMode(QAbstractItemView.NoSelection)
         self.table.setSortingEnabled(True)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
@@ -142,28 +145,31 @@ class StatsGui(QWidget, HubListener):
         
         # Set up expand all, collapse all, select all and deselect all buttons
         
-        # Layout for expand/collapse/select/deselect
-        layout_left_options = QHBoxLayout()
+        # Layout for collapse/expand and sort tree
+        layout_top_left = QHBoxLayout()
+
+        # Layout for select/deselect options
+        layout_bottom_left = QHBoxLayout()
         
         self.expand_data = QPushButton(self)
         self.expand_data.setText("Expand all data and subsets")
         self.expand_data.clicked.connect(self.expandClicked)
-        layout_left_options.addWidget(self.expand_data)
+        layout_top_left.addWidget(self.expand_data)
         
         self.visible = QPushButton(self)
         self.visible.setText("Select all visible")
         self.visible.clicked.connect(self.visibleClicked)
-        layout_left_options.addWidget(self.visible)
+        layout_bottom_left.addWidget(self.visible)
         
         self.all = QPushButton(self)
         self.all.setText('Select all')
         self.all.clicked.connect(self.allClicked)
-        layout_left_options.addWidget(self.all)
+        layout_bottom_left.addWidget(self.all)
         
         self.none = QPushButton(self)
         self.none.setText('Deselect all')
         self.none.clicked.connect(self.noneClicked)
-        layout_left_options.addWidget(self.none)
+        layout_bottom_left.addWidget(self.none)
         
         # Set component_mode to false, default is subset mode
         self.component_mode = False
@@ -174,7 +180,8 @@ class StatsGui(QWidget, HubListener):
         # Add white lines between consecutive selected items
         self.treeview.setStyleSheet(
          "QTreeView::item {border: 0.5px solid #ffffff;}"
-        + "QTreeView::item:selected {background: blue;}"
+        + "QTreeView::item:selected {background: #0269D9;}"
+        + "QTreeView::item:selected {color: #ffffff;}"
         + "QTreeView::branch:selected {background: #ffffff;}")
         
         # Set default significant figures to 5
@@ -183,8 +190,6 @@ class StatsGui(QWidget, HubListener):
         # Set up past selected items
         self.past_selected = []
 
-        # Set up the combo box for users to choose the number of significant figures in the table
-        
         # Set up bottom options layout
         layout_bottom_options = QHBoxLayout()
         
@@ -224,26 +229,32 @@ class StatsGui(QWidget, HubListener):
         self.switch_mode = QPushButton(self)
         self.switch_mode.setText('Sort tree by components')
         self.switch_mode.clicked.connect(self.switchMode)
-        layout_left_options.addWidget(self.switch_mode)
+        layout_top_left.addWidget(self.switch_mode)
         
         # Add instructions to sort the table
         self.how = QLabel(self)
         self.how.setText('Click each column name to sort')
         # Make it a slightly lighter color
         self.how.setForegroundRole(QPalette.Mid)
-        # Right align by adding stretch
-        layout_left_options.addStretch()
-        layout_left_options.addWidget(self.how)
+        # # Right align by adding stretch
+        # layout_bottom_left.addStretch()
+        # layout_bottom_left.addWidget(self.how)
         
         layout_table = QHBoxLayout()
         layout_table.addWidget(self.table)
         layout_table.stretch(10)
 
+        # Set up top options layout
+        layout_left = QVBoxLayout()
+        layout_left.addLayout(layout_top_left)
+        layout_left.addLayout(layout_bottom_left)
+        layout_left.addWidget(self.how)
+
         # Finish nesting all the layouts
         main_layout = QVBoxLayout()
         
         main_layout.addWidget(self.treeview)
-        main_layout.addLayout(layout_left_options)
+        main_layout.addLayout(layout_left)
         main_layout.addLayout(layout_table)
         main_layout.addLayout(layout_bottom_options)
         
@@ -370,7 +381,8 @@ class StatsGui(QWidget, HubListener):
         
         # See if the values have already been cached
         try:
-            column_data = self.cache_stash[cache_key]
+            if self.no_update:
+                column_data = self.cache_stash[cache_key]
         
         except:         
         # Find the stat values
@@ -421,7 +433,8 @@ class StatsGui(QWidget, HubListener):
         
         # See if the statistics are already in the cache
         try:
-            column_data = self.cache_stash[cache_key]
+            if self.no_update:
+                column_data = self.cache_stash[cache_key]
         
         # Find the stats if not in the cache
         # Save in the cache
@@ -994,11 +1007,45 @@ class StatsGui(QWidget, HubListener):
         self.table.setModel(model)
         self.table.setSortingEnabled(True)
         self.table.setShowGrid(False)
-        
+      
+    def updateStats(self, subset):
+        print("table should be updated for subset ", subset)
+    #     # For the subset that was updated:
+    #     # Remove its rows from the table
+
+        # Find the indices of that subset in the treeview and uncheck/recheck in treeview
+        # myPressedEvent and run stats will handle the rest
+        selected_items = []
+        selected_names = []
+
+        if self.component_mode:
+            for i in range(0, len(self.selected_indices)):
+                selected_items.append(self.model_components.itemFromIndex(self.selected_indices[i]))
+                selected_names.append(selected_items[i].text())
+            indices = np.asarray(np.where(selected_names == subset))[0]
+            for i in range(0, len(indices)):
+                self.model_components.itemFromIndex(indices[i]).setCheckState(Qt.Unchecked)
+                self.model_components.itemFromIndex(indices[i]).setCheckState(Qt.Checked)
+        else:
+            for i in range(0, len(self.selected_indices)):
+                selected_items.append(self.model_subsets.itemFromIndex(self.selected_indices[i]))
+                selected_names.append(selected_items[i].parent().parent().text())
+            indices = np.asarray(np.where(selected_names == subset))[0]
+            for i in range(0, len(indices)):
+                self.model_subsets.itemFromIndex(indices[i]).setCheckState(Qt.Unchecked)
+                self.model_subsets.itemFromIndex(indices[i]).setCheckState(Qt.Checked)
+
     def messageReceived(self, message):
         self.no_update = False
         print("Message received:")
         print("{0}".format(message))
+
+        if "Updated subset_state" in str(message):
+            # Get the subset that was updated
+            index1 = str(message).index("Sent from: Subset: ") + len("Sent from: Subset: ")
+            index2 = str(message).index(" (data: ")
+            subset_name = str(message)[index1:index2]
+            self.updateStats(subset_name)  
 
         if self.component_mode:
             index_dict = self.component_dict
@@ -1050,11 +1097,10 @@ class StatsGui(QWidget, HubListener):
         for i in range(0, len(selected)):
             key = list(selected.keys())[i]
             index = index_dict[key]
-            print(type(index))
             self.treeview.setCurrentIndex(index)
 
 
-        # BELOW CODE SHOULD BE ABLE TO REPLACE LINES 1003-1047
+        # # BELOW CODE SHOULD BE ABLE TO REPLACE LINES 1003-1047
 
         # # Save the currently selected indices
         # selected = self.selected_indices
@@ -1067,9 +1113,6 @@ class StatsGui(QWidget, HubListener):
 
         # for i in range(0, len(selected)):
         #     self.treeview.setCurrentIndex(selected[i])
-
-        if "{0}".format(message) == "Updated subset_state":
-            print("table should be updated")
 
         self.no_update = True
 
