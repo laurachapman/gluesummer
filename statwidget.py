@@ -173,6 +173,11 @@ class StatsGui(QWidget, HubListener):
         
         # Set component_mode to false, default is subset mode
         self.component_mode = False
+
+        # These will only be true when the treeview has to switch between views and a
+        # Change has been made in the other
+        self.updateSubsetSort = False
+        self.updateComponentSort = False
         
         # Sort by subsets as a default
         self.sortBySubsets()
@@ -268,7 +273,6 @@ class StatsGui(QWidget, HubListener):
         self.dc.hub.subscribe(self, DataMessage, handler=self.messageReceived)
         self.dc.hub.subscribe(self, SubsetMessage, handler=self.messageReceived)  
         self.dc.hub.subscribe(self, DataCollectionMessage, handler=self.messageReceived)
-    
     
     def myPressedEvent (self, currentQModelIndex):
         ''' 
@@ -706,7 +710,7 @@ class StatsGui(QWidget, HubListener):
         
         # See if the model already exists and doesn't need to be updated
         
-        if self.no_update:
+        if self.no_update and not self.updateSubsetSort:
             try:
                 self.treeview.setModel(self.model_subsets)
             except:
@@ -888,7 +892,7 @@ class StatsGui(QWidget, HubListener):
         
         # See if the model already exists and doesn't need to be updated
         
-        if self.no_update:
+        if self.no_update and not self.updateComponentSort:
             try:
                 self.treeview.setModel(self.model_components)
             except:
@@ -1091,14 +1095,16 @@ class StatsGui(QWidget, HubListener):
         # Handle an updated style, label, or new subset
         if "Updated label" in str(message) or "Updated style" in str(message) or "SubsetCreateMessage" in str(message):
             # Refresh the table and the treeview but don't change values
+            selected_indices = self.treeview.selectionModel().selectedRows()
+
             if self.component_mode:
                 index_dict = self.component_dict
 
                 # Save the selected rows from the component view
                 try:
                     selected = dict()
-                    for i in range(0, len(self.selected_indices)):
-                        item = self.model_components.itemFromIndex(self.selected_indices[i])
+                    for i in range(0, len(selected_indices)):
+                        item = self.model_components.itemFromIndex(selected_indices[i])
                         if item.row() != 0:
                             key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
                             selected[key] = item.index()
@@ -1109,6 +1115,10 @@ class StatsGui(QWidget, HubListener):
                     pass
 
                 self.sortByComponents()
+                # Program will need to update the sort by subset tree next time it switches
+                self.updateSubsetSort = True
+                # Sort by components tree is up to date
+                self.updateComponentSort = False
                 # Expand the tree to see the changes
                 self.expandClicked()
 
@@ -1126,8 +1136,8 @@ class StatsGui(QWidget, HubListener):
                 try:
                     selected = dict()
 
-                    for i in range(0, len(self.selected_indices)):
-                        item = self.model_subsets.itemFromIndex(self.selected_indices[i])
+                    for i in range(0, len(selected_indices)):
+                        item = self.model_subsets.itemFromIndex(selected_indices[i])
                         if item.parent().parent().text() == "Data":
                             key =  "All data (" + item.parent().text() + ")" + item.text()
                             selected[key] = item.index()
@@ -1138,6 +1148,11 @@ class StatsGui(QWidget, HubListener):
                     pass
 
                 self.sortBySubsets()
+                # Program will need to update the sort by component tree next time it switches
+                self.updateComponentSort = True
+                # Sort by subsets tree is up to date
+                self.updateSubsetSort = False
+                # Expand the tree to see the changes
                 # Expand the tree to see the changes
                 self.expandClicked()
 
