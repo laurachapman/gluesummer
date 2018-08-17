@@ -93,7 +93,6 @@ class StatsGui(QWidget, HubListener):
     '''
     
     def __init__(self, dc):
-        print("Hello")
 
         # Initialize the object as a QWidget with a HubListener
         QWidget.__init__(self)
@@ -748,6 +747,7 @@ class StatsGui(QWidget, HubListener):
         self.selected_indices = self.treeview.selectionModel().selectedRows()
 
     def generateSubsetView(self):
+        self.component_mode = False
         self.model_subsets = QStandardItemModel()
         self.model_subsets.setHorizontalHeaderLabels([''])
 
@@ -930,6 +930,7 @@ class StatsGui(QWidget, HubListener):
         self.selected_indices = self.treeview.selectionModel().selectedRows()
         
     def generateComponentView(self):
+        self.component_mode = True
         self.model_components = QStandardItemModel()    
         self.model_components.setHorizontalHeaderLabels([''])
 
@@ -1040,7 +1041,6 @@ class StatsGui(QWidget, HubListener):
         self.table.setShowGrid(False)
       
     def updateStats(self, subset):
-        print("table should be updated for subset ", subset)
     #     # For the subset that was updated:
     #     # Remove its rows from the table
 
@@ -1065,18 +1065,20 @@ class StatsGui(QWidget, HubListener):
                 if selected_items[i].parent().parent().text() == subset:
                     indices.append(self.selected_indices[i])
 
+
         sel_mod = self.treeview.selectionModel()
 
-        for i in range(0, len(indices)):
+        for index in indices:
             # Deselect from treeview
-            self.treeview.setCurrentIndex(indices[i])
+            self.treeview.setCurrentIndex(index)
+            print(self.treeview.currentIndex())
             sel_mod.clearCurrentIndex()
+
         self.treeview.setSelectionModel(sel_mod)
 
-        for i in range(0, len(indices)):
-            # Reselect in treeview
-            self.treeview.setCurrentIndex(indices[i])
-            # self.model_subsets.itemFromIndex(indices[i]).setCheckState(Qt.Checked)
+        for index in indices:
+            # Reselect in treeview, triggering stats to recalculate
+            self.treeview.setCurrentIndex(index)
 
     def messageReceived(self, message):
         self.no_update = False
@@ -1093,7 +1095,7 @@ class StatsGui(QWidget, HubListener):
             self.updateStats(subset_name)  
 
         # Handle an updated style, label, or new subset
-        if "Updated label" in str(message) or "Updated style" in str(message) or "SubsetCreateMessage" in str(message):
+        if "Updated label" in str(message) or "Updated style" in str(message) or "SubsetCreateMessage" in str(message) or "DataUpdateMessage" in str(message) or "SubsetDeleteMessage" in str(message) or "DataCollection" in str(message):
             # Refresh the table and the treeview but don't change values
             selected_indices = self.treeview.selectionModel().selectedRows()
 
@@ -1174,8 +1176,8 @@ class StatsGui(QWidget, HubListener):
         # else:
         #     self.sortBySubsets()
 
-        # for i in range(0, len(selected)):
-        #     self.treeview.setCurrentIndex(selected[i])
+        # for index in selected_indices:
+        #     self.treeview.setCurrentIndex(index)
 
         self.no_update = True
 
