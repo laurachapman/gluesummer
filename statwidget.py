@@ -287,9 +287,13 @@ class StatsGui(QWidget, HubListener):
         if it is newly selected, add it to the table
         if it is newly deselected, remove it from the table
         '''
+        print("myPressedEvent called")
 
         # Get the indexes of all the selected components
         self.selected_indices = self.treeview.selectionModel().selectedRows()
+
+        print("selected: ", len(self.selected_indices), self.selected_indices)
+        print("past: ", len(self.past_selected), self.past_selected)
 
         newly_selected = np.setdiff1d(self.selected_indices, self.past_selected)
             
@@ -324,6 +328,7 @@ class StatsGui(QWidget, HubListener):
                 self.runDataStats(data_i, comp_i)   
             
         newly_dropped = np.setdiff1d(self.past_selected, self.selected_indices)
+        print("len, newly_dropped: ", len(newly_dropped), newly_dropped)
             
         for index in range (0, len(newly_dropped)):
                 
@@ -886,7 +891,6 @@ class StatsGui(QWidget, HubListener):
                 else:
                     key = item.parent().text() + item.text()
                     selected[key] = item.index()
-                    print("in sort by components: ", key)
         except:
             pass
         
@@ -1052,11 +1056,14 @@ class StatsGui(QWidget, HubListener):
     def updateStats(self, subset):
     #     # For the subset that was updated:
     #     # Remove its rows from the table
+        print("in updateStats:")
 
         # Find the indices of that subset in the treeview and uncheck/recheck in treeview
         # myPressedEvent and run stats will handle the rest
         selected_items = []
         indices = []
+        self.selected_indices = self.treeview.selectionModel().selectedRows()
+        # self.past_selected = self.treeview.selectionModel().selectedRows()
 
         if self.component_mode:
             for i in range(0, len(self.selected_indices)):
@@ -1064,6 +1071,7 @@ class StatsGui(QWidget, HubListener):
                 selected_items.append(self.model_components.itemFromIndex(self.selected_indices[i]))
                 # If it's the right subset, add it to the indices
                 if selected_items[i].text() == subset:
+                    print(selected_items[i].text(), selected_items[i].parent().text())
                     indices.append(self.selected_indices[i])
 
         else:
@@ -1076,19 +1084,23 @@ class StatsGui(QWidget, HubListener):
 
         sel_mod = self.treeview.selectionModel()
 
+        print("in indices: (len: ", len(indices), ")")
         for index in indices:
+            print("index: ", index)
             # Deselect from treeview
             self.treeview.setCurrentIndex(index)
-            print(self.treeview.currentIndex())
             sel_mod.clearCurrentIndex()
-            self.myPressedEvent(self.treeview.currentIndex())
+        #     # self.myPressedEvent(self.treeview.currentIndex())
+        # self.myPressedEvent(self.treeview.currentIndex())
 
         self.treeview.setSelectionModel(sel_mod)
+
+        # self.past_selected = self.treeview.selectionModel().selectedRows()
 
         for index in indices:
             # Reselect in treeview, triggering stats to recalculate
             self.treeview.setCurrentIndex(index)
-            self.myPressedEvent(self.treeview.currentIndex())
+        #     # self.myPressedEvent(self.treeview.currentIndex())
 
     def messageReceived(self, message):
         self.no_update = False
@@ -1120,7 +1132,6 @@ class StatsGui(QWidget, HubListener):
                     index2 = str(message).index(" (data: ")
                     # New name of subset
                     subset_name = str(message)[index1:index2]
-                    print("subset_name: ", subset_name)
 
                     # All new subsets
                     new_subs = []
@@ -1137,17 +1148,14 @@ class StatsGui(QWidget, HubListener):
                     # Save the selected rows from the component view
                     try:
                         selected = dict()
-                        print(selected_indices)
                         for i in range(0, len(selected_indices)):
                             item = self.model_components.itemFromIndex(selected_indices[i])
                             if item.row() != 0:
                                 if item.text() == old_label:
                                 # Use updated subset name
                                     key = subset_name + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-                                    print("key (with updated name): ", key)
                                 else: 
                                     key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-                                    print("key: ", key)
                                 selected[key] = item.index()
                             else:
                                 key = item.text() + item.parent().text()
@@ -1160,40 +1168,28 @@ class StatsGui(QWidget, HubListener):
                     index1 = str(message).index("Data Set: ") + len("Data Set: ")
                     index2 = str(message).index("Number of dimensions: ") - 1
                     new_name = str(message)[index1:index2]
-                    print("new name: ", new_name)
 
                     new_names = self.dc.labels
                     old_name = np.setdiff1d(self.data_names, new_names)[0]
-                    print("old name", old_name)
 
                     # Save the selected rows from the component view
                     try:
                         selected = dict()
                         for i in range(0, len(selected_indices)):
-                            print("entered for loop line 1173")
 
                             item = self.model_components.itemFromIndex(selected_indices[i])
-                            print("item.row(): ", item.row())
-                            print("item.text(): ", item.text())
 
                             if item.row() != 0:
-                                print("entered if item.row() != 0")
                                 if item.parent().parent().text() == old_name:
                                     key = item.text() + " (" + new_name + ")"+ item.parent().text()
                                 else:
                                     key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
                                 selected[key] = item.index()
-                                print(key)
                             else:
-                                print("entered else")
                                 if old_name in item.text():
-                                    print("entered if old name in text")
                                     key = "All data (" + new_name + ")" + item.parent().text()
-                                    print(key)
                                 else:
-                                    print("entered else (old name not in text)")
                                     key = item.text() + item.parent().text()
-                                    print(key)
                                 selected[key] = item.index() 
                     except:
                         pass
@@ -1209,7 +1205,6 @@ class StatsGui(QWidget, HubListener):
                             item = self.model_components.itemFromIndex(selected_indices[i])
                             if item.row() != 0:
                                 key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-                                print("key: ", key)
                                 selected[key] = item.index()
                             else:
                                 key = item.text() + item.parent().text()
@@ -1280,11 +1275,9 @@ class StatsGui(QWidget, HubListener):
                     index1 = str(message).index("Data Set: ") + len("Data Set: ")
                     index2 = str(message).index("Number of dimensions: ") - 1
                     new_name = str(message)[index1:index2]
-                    print("new name: ", new_name)
 
                     new_names = self.dc.labels
                     old_name = np.setdiff1d(self.data_names, new_names)[0]
-                    print("old name", old_name)
 
                     # Save the selected rows
                     try:
@@ -1331,9 +1324,6 @@ class StatsGui(QWidget, HubListener):
                 self.updateComponentSort = True
                 # Sort by subsets tree is up to date
                 self.updateSubsetSort = False
-                # Expand the tree to see the changes
-                # Expand the tree to see the changes
-                self.expandClicked()
 
                 # Select the correct rows 
                 for i in range(0, len(selected)):
@@ -1342,5 +1332,4 @@ class StatsGui(QWidget, HubListener):
                     self.treeview.setCurrentIndex(index)
 
         self.no_update = True
-
 
