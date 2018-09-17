@@ -294,6 +294,9 @@ class StatsGui(QWidget, HubListener):
         
         # Set up dict for caching
         self.cache_stash = dict()
+        # Set up dict for matching uuids to items in the treeview
+        # self.subset_uuid_to_item = dict()
+        self.component_uuid_to_item = dict()
     
             # Allow the widget to listen for messages
 #         dc.hub.subscribe(self, SubsetUpdateMessage, handler=self.receive_message)
@@ -309,14 +312,9 @@ class StatsGui(QWidget, HubListener):
         if it is newly selected, add it to the table
         if it is newly deselected, remove it from the table
         '''
-        # print("myPressedEvent called")
 
         # Get the indexes of all the selected components
         self.selected_indices = self.treeview.selectionModel().selectedRows()
-        # print("LENGTH OF SELECTED INDICES myPressedEvent: ", len(self.selected_indices))
-
-        # print("selected: ", len(self.selected_indices), self.selected_indices)
-        # print("past: ", len(self.past_selected), self.past_selected)
 
         newly_selected = np.setdiff1d(self.selected_indices, self.past_selected)
             
@@ -466,8 +464,9 @@ class StatsGui(QWidget, HubListener):
         min_val = self.dc[data_i].compute_statistic('minimum', self.dc[data_i].components[comp_i])     
         max_val = self.dc[data_i].compute_statistic('maximum', self.dc[data_i].components[comp_i])    
         sum_val = self.dc[data_i].compute_statistic('sum', self.dc[data_i].components[comp_i])
+        uuid_val = self.dc[data_i].components[comp_i].uuid
 
-        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val]]).transpose()
+        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [uuid_val]]).transpose()
             
         self.cache_stash[cache_key] = column_data
 
@@ -531,8 +530,9 @@ class StatsGui(QWidget, HubListener):
         min_val = self.dc[data_i].compute_statistic('minimum', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state)       
         max_val = self.dc[data_i].compute_statistic('maximum', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state)      
         sum_val = self.dc[data_i].compute_statistic('sum', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state) 
+        uuid_val = self.dc[data_i].subsets[subset_i].components[comp_i].uuid
 
-        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val]]).transpose()
+        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [uuid_val]]).transpose()
 
         self.cache_stash[cache_key] = column_data  
 
@@ -799,6 +799,9 @@ class StatsGui(QWidget, HubListener):
 
         for i in range(0, len(self.dc)):
             parent = QStandardItem('{}'.format(self.dc.labels[i]))
+            print("parent text: ", parent.text())
+            parent.setData(self.dc.labels[i].uuid)
+            print("parent data: ", parent.data())
             parent.setIcon(helpers.layer_icon(self.dc[i]))
             parent.setEditable(False)
             parent.setSelectable(False)
@@ -807,11 +810,15 @@ class StatsGui(QWidget, HubListener):
             for j in range(0,len(self.dc[i].components)):
                 child = QStandardItem('{}'.format(str(self.dc[i].components[j])))
                 child.setEditable(False)
+                child.setData(self.dc[i].components[j].uuid)
                 child.setIcon(helpers.layer_icon(self.dc[i]))
                     
                 # Add to the subset_dict
                 key = self.dc[i].label + self.dc[i].components[j].label + "All data-" + self.dc[i].label
                 self.subset_dict[key] = child.index()
+
+                # # Add to the uuid to item dict
+                # self.subset_uuid_to_item[self.dc[i].components[j].uuid] = child
                 
                 parent.appendRow(child)
                 self.num_rows = self.num_rows + 1
@@ -830,6 +837,7 @@ class StatsGui(QWidget, HubListener):
         for j in range(0, len(self.dc.subset_groups)):
             grandparent = QStandardItem('{}'.format(self.dc.subset_groups[j].label))
             grandparent.setIcon(helpers.layer_icon(self.dc.subset_groups[j]))
+            grandparent.setData(self.dc.subset_groups[j].uuid)
 
             grandparent.setEditable(False)
             grandparent.setSelectable(False)
@@ -839,6 +847,7 @@ class StatsGui(QWidget, HubListener):
 
                 # Set up the circles
                 parent.setIcon(helpers.layer_icon(self.dc.subset_groups[j]))
+                parent.setData(self.dc.subset_groups[j].uuid)
                 parent.setEditable(False)
                 parent.setSelectable(False)
 
@@ -851,12 +860,16 @@ class StatsGui(QWidget, HubListener):
                 for k in range(0, len(self.dc[i].components)):
 
                     child = QStandardItem('{}'.format(str(self.dc[i].components[k])))
+                    child.setData(self.dc[i].components[k].uuid)
                     child.setEditable(False)
                     child.setIcon(helpers.layer_icon(self.dc.subset_groups[j]))
                         
                     # Update the dict to keep track of row indices
                     key = self.dc[i].label + self.dc[i].components[k].label + self.dc[i].subsets[j].label
                     self.subset_dict[key] = child.index()
+
+                    # Add to the uuid to item dict
+                    # self.subset_uuid_to_item[self.dc[i].subset_groups[j].components[k].uuid] = child                    
                         
                     parent.appendRow(child)
                     self.num_rows = self.num_rows + 1
@@ -889,6 +902,7 @@ class StatsGui(QWidget, HubListener):
                 for k in range(0, parent_subset.child(i).child(j).rowCount()):
                     key = parent_subset.child(i).child(j).text() + parent_subset.child(i).child(j).child(k).text()
                     self.subset_dict[key] = parent_subset.child(i).child(j).child(k).index()
+
         
     def sortByComponents(self):
         '''
@@ -981,25 +995,32 @@ class StatsGui(QWidget, HubListener):
         for i in range(0,len(self.dc)):
             grandparent = QStandardItem('{}'.format(self.dc.labels[i]))
             grandparent.setIcon(helpers.layer_icon(self.dc[i]))
+            grandparent.setData(self.dc[i].uuid)
             grandparent.setEditable(False)
             grandparent.setSelectable(False)
             
             # Make all the data components be children, nested under their parent
             for k in range(0,len(self.dc[i].components)):
-                parent=QStandardItem('{}'.format(str(self.dc[i].components[k])))
+                parent = QStandardItem('{}'.format(str(self.dc[i].components[k])))
+                parent.setData(self.dc[i].components[k].uuid)
                 parent.setEditable(False)
                 parent.setSelectable(False)
                 
                 child = QStandardItem('{}'.format('All data (' + self.dc.labels[i] + ')'))
+                child.setData(self.dc[i].uuid)
                 child.setIcon(helpers.layer_icon(self.dc[i]))
                 child.setEditable(False)
                 child.setIcon(helpers.layer_icon(self.dc[i]))
+
+                # Add to the uuid to item dict
+                # self.component_uuid_to_item[self.dc[i].components[k].uuid] = child  
                     
                 parent.appendRow(child)
                 self.num_rows = self.num_rows + 1
                 
                 for j in range(0, len(self.dc.subset_groups)):
                     child = QStandardItem('{}'.format(self.dc.subset_groups[j].label))
+                    child.setData(self.dc.subset_groups[j].uuid)
                     child.setEditable(False)
                     child.setIcon(helpers.layer_icon(self.dc.subset_groups[j]))
                         
@@ -1011,6 +1032,9 @@ class StatsGui(QWidget, HubListener):
                         child.setEditable(False)
                         child.setSelectable(False)
                         child.setForeground(QtGui.QBrush(Qt.gray)) 
+
+                    # Add to the uuid to item dict
+                    self.component_uuid_to_item[self.dc[i].subsets[j].components[k].uuid] = child  
 
                     parent.appendRow(child)
                     self.num_rows = self.num_rows + 1
@@ -1099,7 +1123,6 @@ class StatsGui(QWidget, HubListener):
                 else:
                     no_update_indices.append(self.selected_indices[i])
 
-
         else:
             for i in range(0, len(self.selected_indices)):
                 # Get the selected items
@@ -1124,55 +1147,6 @@ class StatsGui(QWidget, HubListener):
         for index in no_update_indices:
             self.treeview.setCurrentIndex(index)
 
-    def dataStateUpdate(self, data_name):
-        # print("entered dataStateUpdate")
-        # print("DATA NAME: ", data_name)
-        selected_items = []
-        # Indices of items that need to change
-        indices = []
-        # Indices of items to update
-        no_update_indices = []
-        # self.selected_indices = self.treeview.selectionModel().selectedRows()
-        # self.past_selected = self.treeview.selectionModel().selectedRows()
-
-        # print("LEN OF SELECTED INDICES LINE 1138 in dataStateUpdate: ", len(self.selected_indices))
-
-        if self.component_mode:
-            for i in range(0, len(self.selected_indices)):
-                # Get the selected items
-                selected_items.append(self.model_components.itemFromIndex(self.selected_indices[i]))
-                # If it's in the dataset, add it to the indices
-                if data_name in selected_items[i].text():
-                    indices.append(self.selected_indices[i])
-                else:
-                    no_update_indices.append(self.selected_indices[i])
-
-        else:
-            for i in range(0, len(self.selected_indices)):
-                # Get the selected items
-                selected_items.append(self.model_subsets.itemFromIndex(self.selected_indices[i]))
-                # Get the names of the selected items
-                if selected_items[i].parent().text() == data_name:
-                    indices.append(self.selected_indices[i])
-                else:
-                    no_update_indices.append(self.selected_indices[i])
-
-        # Clear the treeview
-        self.noneClicked()
-
-        # print("indices: ", indices)
-        # print("no_update_indices: ", no_update_indices)
-
-        # Reselect the updated subset rows
-        for index in self.selected_indices:
-            # Reselect in treeview, triggering stats to recalculate
-            self.treeview.setCurrentIndex(index)
-        #     # self.myPressedEvent(self.treeview.currentIndex())
-
-        self.no_update = True
-        # # Reselect the other rows that don't need update
-        # for index in no_update_indices:
-        #     self.treeview.setCurrentIndex(index)
 
     def messageReceived(self, message):
         self.no_update = False
@@ -1183,80 +1157,14 @@ class StatsGui(QWidget, HubListener):
         if "Updated subset_state" in str(message):
             # Redo the stats
             # Get the subset that was updated
-            index1 = str(message).index("Sent from: Subset: ") + len("Sent from: Subset: ")
-            index2 = str(message).index(" (data: ")
-            subset_name = str(message)[index1:index2]
+            # index1 = str(message).index("Sent from: Subset: ") + len("Sent from: Subset: ")
+            # index2 = str(message).index(" (data: ")
+            # subset_name = str(message)[index1:index2]
+            uuid = message.sender.uuid
+            for i in range(0, len(self.dc.subset_groups)):
+                if self.dc.subset_groups[i].uuid == uuid:
+                    subset_name = self.dc.subset_groups[i].label
             self.subsetStateUpdate(subset_name)  
-
-        elif "NumericalDataChangedMessage" in str(message):
-            # print("RUNNING NUMERICALDATACHANGEDMESSAGE")
-            # Need to update labels and then update data 
-            # Update for an updated data label
-            index1 = str(message).index("Data Set: ") + len("Data Set: ")
-            index2 = str(message).index("Number of dimensions: ") - 1
-            new_name = str(message)[index1:index2]
-
-            # Get the new name and the old name of the data
-
-
-            # new_names = self.dc.labels
-            # print("new names: ", new_names)
-            # print("old names: ", self.data_names)
-            # old_name = np.setdiff1d(self.data_names, new_names)[0]
-
-            # selected_indices = self.treeview.selectionModel().selectedRows()
-            # print("LENGTH OF SELECTED INDICES NumericalDataChangedMessage: ", len(self.selected_indices))
-
-            # # Save the selected rows from the component view
-            # try:
-            #     selected = dict()
-            #     for i in range(0, len(selected_indices)):
-
-            #         item = self.model_components.itemFromIndex(selected_indices[i])
-
-            #         if item.row() != 0:
-            #             if item.parent().parent().text() == old_name:
-            #                 key = item.text() + " (" + new_name + ")"+ item.parent().text()
-            #             else:
-            #                 key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-            #             selected[key] = item.index()
-            #         else:
-            #             if old_name in item.text():
-            #                 key = "All data (" + new_name + ")" + item.parent().text()
-            #             else:
-            #                 key = item.text() + item.parent().text()
-            #             selected[key] = item.index() 
-            # except:
-            #     pass
-
-            # Update the labels
-            # self.data_names = self.dc.labels
-
-            # Handle an updated data set
-            # Remove pixel components
-            for i in range(0, len(self.dc)):
-                all_components = self.dc[i].components
-                if type(self.dc[i].coords) is coordinates.Coordinates:
-                    keep_components = self.dc[i].main_components + self.dc[i].derived_components
-                else:
-                    keep_components = self.dc[i].main_components + self.dc[i].derived_components + self.dc[i].world_component_ids
-                remove = np.setdiff1d(self.dc[i].components, keep_components)
-                for j in range(0, len(remove)):
-                    self.dc[i].remove_component(remove[j])
-
-            # if self.component_mode:
-            #     for i in range(0, len(selected)):
-            #         key = list(selected.keys())[i]
-            #         index = self.component_dict[key]
-            #         self.treeview.setCurrentIndex(index)
-            # else:
-            #     for i in range(0, len(selected)):
-            #         key = list(selected.keys())[i]
-            #         index = self.subset_dict[key]
-            #         self.treeview.setCurrentIndex(index)
-
-            # Redo the statistics
-            self.dataStateUpdate(new_name)
 
         # Handle the rest of the cases by refreshing the treeview without changing values
         else:
@@ -1269,14 +1177,18 @@ class StatsGui(QWidget, HubListener):
             if self.component_mode:
 
                 if "Updated label" in str(message):
-                    # print("RUNNING UPDATED LABEL FOR SUBSETS")
                     # Figure out what in the treeview is no longer in the dataset
                     # For these items, key according to the new label
                     # Subsets only
 
-                    index1 = str(message).index("Sent from: Subset: ") + len("Sent from: Subset: ")
-                    index2 = str(message).index(" (data: ")
-                    # New name of subset
+                    # index1 = str(message).index("Sent from: Subset: ") + len("Sent from: Subset: ")
+                    # index2 = str(message).index(" (data: ")
+                    # # New name of subset
+
+                    uuid = message.sender.uuid
+                    for i in range(0, len(self.dc.subset_groups)):
+                        if self.dc.subset_groups[i].uuid == uuid:
+                            subset_name = self.dc.subset_groups[i].label
                     subset_name = str(message)[index1:index2]
 
                     # All new subsets
@@ -1355,21 +1267,16 @@ class StatsGui(QWidget, HubListener):
                     # Get the index of that dataset
                     # This will create problems if there is more than one dataset with the same name
                     dataset = self.dc.labels.index(data_name)
-                    print(dataset, type(dataset))
 
                     new_names = []
                     # Get the new names of components
                     for i in range(0, len(self.dc[dataset].components)):
                         new_names.append(self.dc[dataset].components[i].label)
 
-                    print("new_names: ", new_names)
-
                     # Use setdiff1d to get the old name
                     old_name = np.setdiff1d(self.all_comp_names[dataset], new_names)[0]  
-                    print("old_name: ", old_name)
                     # Use setdiff1d to get the new name
-                    new_name = np.setdiff1d(new_names, self.all_comp_names[dataset])[0]  
-                    print("new_name: ", new_name)                  
+                    new_name = np.setdiff1d(new_names, self.all_comp_names[dataset])[0]               
 
                     # Go through key process to assign new keys to the rows that have the old name
                     try:
