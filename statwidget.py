@@ -147,7 +147,7 @@ class StatsGui(QWidget, HubListener):
         self.num_rows = 0
         
         # Set up the headings
-        self.headings = ('Subset', 'Dataset', 'Component', 'Mean', 'Median', 'Minimum', 'Maximum', 'Sum')
+        self.headings = ('Subset', 'Dataset', 'Component', 'Mean', 'Median', 'Minimum', 'Maximum', 'Sum', 'uuid')
         
         # Set up the QTableView Widget
         self.table = QTableView(self)
@@ -327,26 +327,29 @@ class StatsGui(QWidget, HubListener):
                     data_i = newly_selected[index].parent().row()
                     comp_i = newly_selected[index].row()
                     subset_i = -1
+                    uuid_val = newly_selected[index].data()
                 else:
                     # Subsets
                     data_i = newly_selected[index].parent().row()
                     comp_i = newly_selected[index].row()
                     subset_i = newly_selected[index].parent().parent().row()
+                    uuid_val = newly_selected[index].data()
             
             else:
                 data_i = newly_selected[index].parent().parent().row()
                 comp_i = newly_selected[index].parent().row()
                 subset_i = newly_selected[index].row() - 1
+                uuid_val = newly_selected[index].parent().data()
 
             is_subset = (subset_i != -1)
 
             # Check if its a subset and if so run subset stats
             if is_subset: 
-                self.runSubsetStats(subset_i, data_i, comp_i)
+                self.runSubsetStats(subset_i, data_i, comp_i, uuid_val)
 
             else:
                 # Run standard data stats
-                self.runDataStats(data_i, comp_i)   
+                self.runDataStats(data_i, comp_i, uuid_val)   
             
         newly_dropped = np.setdiff1d(self.past_selected, self.selected_indices)
         # print("len, newly_dropped: ", len(newly_dropped), newly_dropped)
@@ -358,22 +361,25 @@ class StatsGui(QWidget, HubListener):
                 data_i = newly_dropped[index].parent().row()
                 comp_i = newly_dropped[index].row()
                 subset_i = newly_dropped[index].parent().parent().row()
+                uuid_val = newly_dropped[index].data()
             
             else:
                 data_i = newly_dropped[index].parent().parent().row()
                 comp_i = newly_dropped[index].parent().row()
                 subset_i = newly_dropped[index].row() - 1
+                uuid_val = newly_dropped[index].parent().data()
             
             is_subset = newly_dropped[index].parent().parent().parent().row() == 1 or (self.switch_mode.text() == 'Sort tree by subsets' and subset_i != -1)
 
             if is_subset:
                 try:
                     # Get the indices that match the component, dataset, and subset requirements
-                    idx_c = np.where(self.data_frame['Component'] == self.dc[data_i].components[comp_i].label)
-                    idx_d = np.where(self.data_frame['Dataset'] == self.dc[data_i].label)
-                    idx_s = np.where(self.data_frame['Subset'] == self.dc[data_i].subsets[subset_i].label)
-                    idx1 = np.intersect1d(idx_c, idx_d)
-                    idx2 = np.intersect1d(idx1, idx_s)
+                    # idx_c = np.where(self.data_frame['Component'] == self.dc[data_i].components[comp_i].label)
+                    # idx_d = np.where(self.data_frame['Dataset'] == self.dc[data_i].label)
+                    # idx_s = np.where(self.data_frame['Subset'] == self.dc[data_i].subsets[subset_i].label)
+                    # idx1 = np.intersect1d(idx_c, idx_d)
+                    # idx2 = np.intersect1d(idx1, idx_s)
+                    idx2 = self.data_frame['uuid'].index(uuid_val) 
 
                     self.data_frame = self.data_frame.drop(idx2)
                 except:
@@ -384,11 +390,12 @@ class StatsGui(QWidget, HubListener):
                 # Find the index in the table of the unchecked element, if it's in the table
 
                     # Find the matching component and dataset indices and intersect them to get the unique index
-                    idx_c = np.where(self.data_frame['Component'] == self.dc[data_i].components[comp_i].label)
-                    idx_d = np.where(self.data_frame['Dataset'] == self.dc[data_i].label)
-                    idx_s = np.where(self.data_frame['Subset'] == '--')
-                    idx1 = np.intersect1d(idx_c, idx_d)
-                    idx2 = np.intersect1d(idx1, idx_s)
+                    # idx_c = np.where(self.data_frame['Component'] == self.dc[data_i].components[comp_i].label)
+                    # idx_d = np.where(self.data_frame['Dataset'] == self.dc[data_i].label)
+                    # idx_s = np.where(self.data_frame['Subset'] == '--')
+                    # idx1 = np.intersect1d(idx_c, idx_d)
+                    # idx2 = np.intersect1d(idx1, idx_s)
+                    idx2 = np.where(self.data_frame['uuid'] == uuid_val)
 
                     self.data_frame = self.data_frame.drop(idx2)
                 except:
@@ -404,7 +411,7 @@ class StatsGui(QWidget, HubListener):
         self.table.setSortingEnabled(True)
         self.table.setShowGrid(False)  
     
-    def runDataStats (self, data_i, comp_i):
+    def runDataStats (self, data_i, comp_i, uuid_val):
         '''
         Runs statistics for the component comp_i of data set data_i
         '''
@@ -412,9 +419,11 @@ class StatsGui(QWidget, HubListener):
         subset_label = "--"
         data_label = self.dc[data_i].label   
         comp_label = self.dc[data_i].components[comp_i].label # add to the name array to build the table
+        # uuid_val = self.dc[data_i].components[comp_i].uuid
         
         # Build the cache key
-        cache_key = subset_label + data_label + comp_label
+        # cache_key = subset_label + data_label + comp_label
+        cache_key = uuid_val
         
         # See if the values have already been cached
         if self.no_update:
@@ -443,19 +452,21 @@ class StatsGui(QWidget, HubListener):
         sum_val = string % Decimal(column_data[0][7])            
 
         # Create the column data array and append it to the data frame
-        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val]]).transpose()
+        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [uuid_val]]).transpose()
         column_df = pd.DataFrame(column_data, columns=self.headings)
         self.data_frame = self.data_frame.append(column_df, ignore_index=True)
     
-    def newDataStats(self, data_i, comp_i):
+    def newDataStats(self, data_i, comp_i, uuid_val):
         # Generates new data for a dataset that has to be calculated
 
         subset_label = "--"
         data_label = self.dc[data_i].label   
         comp_label = self.dc[data_i].components[comp_i].label # add to the name array to build the table
+        # uuid_val = self.dc[data_i].components[comp_i].uuid
         
         # Build the cache key
-        cache_key = subset_label + data_label + comp_label
+        # cache_key = subset_label + data_label + comp_label
+        cache_key = uuid_val
 
         # Find the stat values
         # Save the data in the cache 
@@ -472,7 +483,7 @@ class StatsGui(QWidget, HubListener):
 
         return column_data
 
-    def runSubsetStats (self, subset_i, data_i, comp_i):
+    def runSubsetStats (self, subset_i, data_i, comp_i, uuid_val):
         '''
         Runs statistics for the subset subset_i with respect to the component comp_i of data set data_i
         '''
@@ -482,8 +493,9 @@ class StatsGui(QWidget, HubListener):
         comp_label = self.dc[data_i].components[comp_i].label # add to the name array to build the table
         
         # Build the cache key
-        cache_key = subset_label + data_label + comp_label
-        
+        # cache_key = subset_label + data_label + comp_label
+        cache_key = uuid_val
+
         # See if the statistics are already in the cache if nothing needs to be updated
         
         if self.no_update:
@@ -512,18 +524,19 @@ class StatsGui(QWidget, HubListener):
         sum_val = string % Decimal(column_data[0][7])
         
         # Create the column data array and append it to the data frame
-        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val]]).transpose()
+        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [uuid_val]]).transpose()
         column_df = pd.DataFrame(column_data, columns=self.headings)
         self.data_frame = self.data_frame.append(column_df, ignore_index=True)  
 
-    def newSubsetStats(self, subset_i, data_i, comp_i):
+    def newSubsetStats(self, subset_i, data_i, comp_i, uuid_val):
         # Generates new data for a subset that needs to be calculated
         subset_label = self.dc[data_i].subsets[subset_i].label
         data_label = self.dc[data_i].label   
         comp_label = self.dc[data_i].components[comp_i].label # add to the name array to build the table
 
         # Build the cache key
-        cache_key = subset_label + data_label + comp_label
+        # cache_key = subset_label + data_label + comp_label
+        cache_key = uuid_val
 
         mean_val = self.dc[data_i].compute_statistic('mean', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc[data_i].subsets[subset_i].subset_state)
         median_val = self.dc[data_i].compute_statistic('median', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state)       
@@ -566,16 +579,18 @@ class StatsGui(QWidget, HubListener):
         for i in range (0, len(self.data_frame)):
             # Traverse through the data_frame, which represents the data in the table
             # Get the name of the component, dataset, and subset of each row  
-            component = self.data_frame['Component'][i]
-            dataset = self.data_frame['Dataset'][i]
-            subset = self.data_frame['Subset'][i]
+            # component = self.data_frame['Component'][i]
+            # dataset = self.data_frame['Dataset'][i]
+            # subset = self.data_frame['Subset'][i]
+            uuid_val = self.data_frame['uuid'][i]
                
             # Find the index of data_accurate that corresponds to the data
-            idx_c = np.where(component == self.data_accurate['Component'])
-            idx_d = np.where(dataset == self.data_accurate['Dataset'])
-            idx_s = np.where(subset == self.data_accurate['Subset'])
-            idx1 = np.intersect1d(idx_c, idx_d)
-            idx2 = np.intersect1d(idx1, idx_s)[0] 
+            # idx_c = np.where(component == self.data_accurate['Component'])
+            # idx_d = np.where(dataset == self.data_accurate['Dataset'])
+            # idx_s = np.where(subset == self.data_accurate['Subset'])
+            # idx1 = np.intersect1d(idx_c, idx_d)
+            # idx2 = np.intersect1d(idx1, idx_s)[0] 
+            idx2 = self.data_accurate['uuid'].index(uuid_val)
                 
             # Append the values to the stat arrays, formatted with the string built above
             mean_vals.append(string % Decimal(self.data_accurate['Mean'][idx2]))
@@ -725,10 +740,12 @@ class StatsGui(QWidget, HubListener):
             for i in range(0, len(self.selected_indices)):
                 item = self.model_components.itemFromIndex(self.selected_indices[i])
                 if item.row() != 0:
-                    key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
+                    # key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
+                    key = item.parent.data()
                     selected[key] = item.index()
                 else:
-                    key = item.text() + item.parent().text()
+                    # key = item.text() + item.parent().text()
+                    key = item.parent().data()
                     selected[key] = item.index() 
         except:
             pass
@@ -799,9 +816,7 @@ class StatsGui(QWidget, HubListener):
 
         for i in range(0, len(self.dc)):
             parent = QStandardItem('{}'.format(self.dc.labels[i]))
-            print("parent text: ", parent.text())
-            parent.setData(self.dc.labels[i].uuid)
-            print("parent data: ", parent.data())
+            parent.setData(self.dc[i].uuid)
             parent.setIcon(helpers.layer_icon(self.dc[i]))
             parent.setEditable(False)
             parent.setSelectable(False)
@@ -814,7 +829,8 @@ class StatsGui(QWidget, HubListener):
                 child.setIcon(helpers.layer_icon(self.dc[i]))
                     
                 # Add to the subset_dict
-                key = self.dc[i].label + self.dc[i].components[j].label + "All data-" + self.dc[i].label
+                # key = self.dc[i].label + self.dc[i].components[j].label + "All data-" + self.dc[i].label
+                key = child.data()
                 self.subset_dict[key] = child.index()
 
                 # # Add to the uuid to item dict
@@ -865,7 +881,8 @@ class StatsGui(QWidget, HubListener):
                     child.setIcon(helpers.layer_icon(self.dc.subset_groups[j]))
                         
                     # Update the dict to keep track of row indices
-                    key = self.dc[i].label + self.dc[i].components[k].label + self.dc[i].subsets[j].label
+                    # key = self.dc[i].label + self.dc[i].components[k].label + self.dc[i].subsets[j].label
+                    key = child.data()
                     self.subset_dict[key] = child.index()
 
                     # Add to the uuid to item dict
@@ -893,14 +910,16 @@ class StatsGui(QWidget, HubListener):
         # Full datasets
         for i in range(0, parent_data.rowCount()):
             for j in range(0, parent_data.child(i).rowCount()):
-                key = "All data (" + parent_data.child(i).text() + ")"+ parent_data.child(i).child(j).text()
+                # key = "All data (" + parent_data.child(i).text() + ")"+ parent_data.child(i).child(j).text()
+                key = parent_data.child(i).child(j).data()
                 self.subset_dict[key] = parent_data.child(i).child(j).index()
             
         # Subsets
         for i in range(0, parent_subset.rowCount()):
             for j in range(0, parent_subset.child(i).rowCount()):
                 for k in range(0, parent_subset.child(i).child(j).rowCount()):
-                    key = parent_subset.child(i).child(j).text() + parent_subset.child(i).child(j).child(k).text()
+                    # key = parent_subset.child(i).child(j).text() + parent_subset.child(i).child(j).child(k).text()
+                    key = parent_subset.child(i).child(j).child(k).data()
                     self.subset_dict[key] = parent_subset.child(i).child(j).child(k).index()
 
         
@@ -924,10 +943,12 @@ class StatsGui(QWidget, HubListener):
             for i in range(0, len(self.selected_indices)):
                 item = self.model_subsets.itemFromIndex(self.selected_indices[i])
                 if item.parent().parent().text() == "Data":
-                    key =  "All data (" + item.parent().text() + ")" + item.text()
+                    # key =  "All data (" + item.parent().text() + ")" + item.text()
+                    key = item.data()
                     selected[key] = item.index()
                 else:
-                    key = item.parent().text() + item.text()
+                    # key = item.parent().text() + item.text()
+                    key = item.data()
                     selected[key] = item.index()
         except:
             pass
@@ -1020,7 +1041,7 @@ class StatsGui(QWidget, HubListener):
                 
                 for j in range(0, len(self.dc.subset_groups)):
                     child = QStandardItem('{}'.format(self.dc.subset_groups[j].label))
-                    child.setData(self.dc.subset_groups[j].uuid)
+                    child.setData(self.dc.subset_groups[j].components[k].uuid)
                     child.setEditable(False)
                     child.setIcon(helpers.layer_icon(self.dc.subset_groups[j]))
                         
@@ -1034,7 +1055,7 @@ class StatsGui(QWidget, HubListener):
                         child.setForeground(QtGui.QBrush(Qt.gray)) 
 
                     # Add to the uuid to item dict
-                    self.component_uuid_to_item[self.dc[i].subsets[j].components[k].uuid] = child  
+                    # self.component_uuid_to_item[self.dc[i].subsets[j].components[k].uuid] = child  
 
                     parent.appendRow(child)
                     self.num_rows = self.num_rows + 1
@@ -1046,10 +1067,12 @@ class StatsGui(QWidget, HubListener):
             for i in range(0, grandparent.rowCount()):
                 for j in range(0, grandparent.child(i).rowCount()):
                     if grandparent.child(i).child(j).row() == 0:
-                        key = grandparent.child(i).child(j).text() + grandparent.child(i).text()
+                        # key = grandparent.child(i).child(j).text() + grandparent.child(i).text()
+                        key = grandparent.child(i).data()
                         self.component_dict[key] = grandparent.child(i).child(j).index()
                     else:
-                        key = grandparent.child(i).child(j).text() + " (" + grandparent.text() + ")" + grandparent.child(i).text()
+                        # key = grandparent.child(i).child(j).text() + " (" + grandparent.text() + ")" + grandparent.child(i).text()
+                        key = grandparent.child(i).data()
                         self.component_dict[key] = grandparent.child(i).child(j).index()
             
     def notation(self):
@@ -1079,13 +1102,16 @@ class StatsGui(QWidget, HubListener):
             component = self.data_frame['Component'][i]
             dataset = self.data_frame['Dataset'][i]
             subset = self.data_frame['Subset'][i]
+
+            uuid_val = self.data_frame['uuid'][i]
                 
             # Pull the correct index of the data in data_accurate
-            idx_c = np.where(component == self.data_accurate['Component'])
-            idx_d = np.where(dataset == self.data_accurate['Dataset'])
-            idx_s = np.where(subset == self.data_accurate['Subset'])
-            idx1 = np.intersect1d(idx_c, idx_d)
-            idx2 = np.intersect1d(idx1, idx_s)[0] 
+            # idx_c = np.where(component == self.data_accurate['Component'])
+            # idx_d = np.where(dataset == self.data_accurate['Dataset'])
+            # idx_s = np.where(subset == self.data_accurate['Subset'])
+            # idx1 = np.intersect1d(idx_c, idx_d)
+            # idx2 = np.intersect1d(idx1, idx_s)[0] 
+            idx2 = self.data_accurate['uuid'].index(uuid_val)
                 
             # Format the data in data_accurate
             mean_vals.append(string % Decimal(self.data_accurate['Mean'][idx2]))
@@ -1211,12 +1237,15 @@ class StatsGui(QWidget, HubListener):
                             if item.row() != 0:
                                 if item.text() == old_label:
                                 # Use updated subset name
-                                    key = subset_name + " (" + item.parent().parent().text() + ")"+ item.parent().text()
+                                    # key = subset_name + " (" + item.parent().parent().text() + ")"+ item.parent().text()
+                                    key = item.parent().data()
                                 else: 
-                                    key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
+                                    # key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
+                                    item.parent().data()
                                 selected[key] = item.index()
                             else:
-                                key = item.text() + item.parent().text()
+                                # key = item.text() + item.parent().text()
+                                key = item.parent().data()
                                 selected[key] = item.index() 
                     except:
                         pass
@@ -1238,18 +1267,20 @@ class StatsGui(QWidget, HubListener):
 
                             item = self.model_components.itemFromIndex(selected_indices[i])
 
-                            if item.row() != 0:
-                                if item.parent().parent().text() == old_name:
-                                    key = item.text() + " (" + new_name + ")"+ item.parent().text()
-                                else:
-                                    key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-                                selected[key] = item.index()
-                            else:
-                                if old_name in item.text():
-                                    key = "All data (" + new_name + ")" + item.parent().text()
-                                else:
-                                    key = item.text() + item.parent().text()
-                                selected[key] = item.index() 
+                            # if item.row() != 0:
+                            #     if item.parent().parent().text() == old_name:
+                            #         key = item.text() + " (" + new_name + ")"+ item.parent().text()
+                            #     else:
+                            #         key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
+                            #     selected[key] = item.index()
+                            # else:
+                            #     if old_name in item.text():
+                            #         key = "All data (" + new_name + ")" + item.parent().text()
+                            #     else:
+                            #         key = item.text() + item.parent().text()
+                            #     selected[key] = item.index() 
+                            key = item.parent().data()
+                            selected[key] = item.index()
                     except:
                         pass
 
@@ -1285,18 +1316,20 @@ class StatsGui(QWidget, HubListener):
 
                             item = self.model_components.itemFromIndex(selected_indices[i])
 
-                            if item.row() != 0:
-                                if item.parent().text() == old_name:
-                                    key = item.text() + " (" + item.parent().parent().text() + ")"+ new_name
-                                else:
-                                    key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-                                selected[key] = item.index()
-                            else:
-                                if item.parent().text() == old_name:
-                                    key = item.text() + new_name
-                                else:
-                                    key = item.text() + item.parent().text()
-                                selected[key] = item.index() 
+                            key = item.parent().data()
+                            selected[key] = item.index()
+                            # if item.row() != 0:
+                            #     if item.parent().text() == old_name:
+                            #         key = item.text() + " (" + item.parent().parent().text() + ")"+ new_name
+                            #     else:
+                            #         key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
+                            #     selected[key] = item.index()
+                            # else:
+                            #     if item.parent().text() == old_name:
+                            #         key = item.text() + new_name
+                            #     else:
+                            #         key = item.text() + item.parent().text()
+                            #     selected[key] = item.index() 
                     except:
                         pass
 
@@ -1317,12 +1350,14 @@ class StatsGui(QWidget, HubListener):
                         selected = dict()
                         for i in range(0, len(selected_indices)):
                             item = self.model_components.itemFromIndex(selected_indices[i])
-                            if item.row() != 0:
-                                key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-                                selected[key] = item.index()
-                            else:
-                                key = item.text() + item.parent().text()
-                                selected[key] = item.index() 
+                            # if item.row() != 0:
+                            #     key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
+                            #     selected[key] = item.index()
+                            # else:
+                            #     key = item.text() + item.parent().text()
+                            #     selected[key] = item.index() 
+                            key = item.parent().data()
+                            selected[key] = item.index()
                     except:
                         pass
 
@@ -1370,18 +1405,20 @@ class StatsGui(QWidget, HubListener):
                         selected = dict()
                         for i in range(0, len(selected_indices)):
                             item = self.model_subsets.itemFromIndex(selected_indices[i])
-                            if item.parent().parent().text() == "Data":
-                                key =  "All data (" + item.parent().text() + ")" + item.text()
-                                selected[key] = item.index()
-                            else:
-                                if item.parent().parent().text() == old_label:
-                                    # Build the correct new key
-                                    index1 = item.parent().text().index("(") - 1
-                                    index2 = item.parent().text().index(")") + 1
-                                    key = subset_name + item.parent().text()[index1:index2] + item.text()
-                                else:
-                                    key = item.parent().text() + item.text()
-                                selected[key] = item.index()
+                            key = item.data()
+                            selected[key] = item.index()
+                            # if item.parent().parent().text() == "Data":
+                            #     key =  "All data (" + item.parent().text() + ")" + item.text()
+                            #     selected[key] = item.index()
+                            # else:
+                            #     if item.parent().parent().text() == old_label:
+                            #         # Build the correct new key
+                            #         index1 = item.parent().text().index("(") - 1
+                            #         index2 = item.parent().text().index(")") + 1
+                            #         key = subset_name + item.parent().text()[index1:index2] + item.text()
+                            #     else:
+                            #         key = item.parent().text() + item.text()
+                            #     selected[key] = item.index()
                     except:
                         pass
 
@@ -1400,18 +1437,20 @@ class StatsGui(QWidget, HubListener):
 
                         for i in range(0, len(selected_indices)):
                             item = self.model_subsets.itemFromIndex(selected_indices[i])
-                            if item.parent().parent().text() == "Data":
-                                if item.parent().text() == old_name:
-                                    key = "All data (" + new_name + ")" + item.text()
-                                else: 
-                                    key =  "All data (" + item.parent().text() + ")" + item.text()
-                                selected[key] = item.index()
-                            else:
-                                if old_name in item.parent().text():
-                                    key = item.parent().parent().text() + " (" + new_name + ")" + item.text()
-                                else:
-                                    key = item.parent().text() + item.text()
-                                selected[key] = item.index()
+                            key = item.data()
+                            selected[key] = item.index()
+                            # if item.parent().parent().text() == "Data":
+                            #     if item.parent().text() == old_name:
+                            #         key = "All data (" + new_name + ")" + item.text()
+                            #     else: 
+                            #         key =  "All data (" + item.parent().text() + ")" + item.text()
+                            #     selected[key] = item.index()
+                            # else:
+                            #     if old_name in item.parent().text():
+                            #         key = item.parent().parent().text() + " (" + new_name + ")" + item.text()
+                            #     else:
+                            #         key = item.parent().text() + item.text()
+                            #     selected[key] = item.index()
                     except:
                         pass
 
@@ -1450,22 +1489,25 @@ class StatsGui(QWidget, HubListener):
 
                         for i in range(0, len(selected_indices)):
                             item = self.model_subsets.itemFromIndex(selected_indices[i])
-                            if item.parent().parent().text() == "Data":
-                                if item.text() == old_name and item.parent().text() == self.dc[dataset].label:
-                                    key = "All data (" + item.parent().text() + ")" + new_name
-                                    # print("line 1395")
-                                    # print(key)
-                                else:
-                                    key = "All data (" + item.parent().text() + ")" + item.text()
-                                selected[key] = item.index()
-                            else:
-                                if item.text() == old_name and item.parent().text() == self.dc[dataset].label:
-                                    key = item.parent().text() + new_name
-                                    # print("line 1403")
-                                    # print(key)
-                                else:
-                                    key = item.parent().text() + item.text()
-                                selected[key] = item.index()
+                            key = item.data()
+                            selected[key] = item.index()
+
+                            # if item.parent().parent().text() == "Data":
+                            #     if item.text() == old_name and item.parent().text() == self.dc[dataset].label:
+                            #         key = "All data (" + item.parent().text() + ")" + new_name
+                            #         # print("line 1395")
+                            #         # print(key)
+                            #     else:
+                            #         key = "All data (" + item.parent().text() + ")" + item.text()
+                            #     selected[key] = item.index()
+                            # else:
+                            #     if item.text() == old_name and item.parent().text() == self.dc[dataset].label:
+                            #         key = item.parent().text() + new_name
+                            #         # print("line 1403")
+                            #         # print(key)
+                            #     else:
+                            #         key = item.parent().text() + item.text()
+                            #     selected[key] = item.index()
 
                     except:
                         pass
@@ -1486,12 +1528,14 @@ class StatsGui(QWidget, HubListener):
 
                         for i in range(0, len(selected_indices)):
                             item = self.model_subsets.itemFromIndex(selected_indices[i])
-                            if item.parent().parent().text() == "Data":
-                                key =  "All data (" + item.parent().text() + ")" + item.text()
-                                selected[key] = item.index()
-                            else:
-                                key = item.parent().text() + item.text()
-                                selected[key] = item.index()
+                            key = item.data()
+                            selected[key] = item.index()
+                            # if item.parent().parent().text() == "Data":
+                            #     key =  "All data (" + item.parent().text() + ")" + item.text()
+                            #     selected[key] = item.index()
+                            # else:
+                            #     key = item.parent().text() + item.text()
+                            #     selected[key] = item.index()
                     except:
                         pass
 
