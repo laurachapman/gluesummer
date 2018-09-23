@@ -133,6 +133,14 @@ class StatsGui(QWidget, HubListener):
             self.all_comp_names.append(component_names)
             component_names = []
 
+        # Match the uuids to an array of data/component/subset indices
+        self.uuid_dict = dict()
+        for d in range(0, len(self.dc)):
+            for c in range(0, len(self.dc[d].components)):
+                self.uuid_dict[self.dc[d].components[c].uuid] = [d, c, -1]
+                for s in range(0, len(self.dc[d].subsets)):
+                    self.uuid_dict[self.dc[d].subsets[s].components[c].uuid] = [d, c, s]                   
+
         # Set the title of the main GUI window
         self.setWindowTitle('Statistics')
         
@@ -220,6 +228,7 @@ class StatsGui(QWidget, HubListener):
         
         # Set up past selected items
         self.past_selected = []
+        self.past_items = []
 
         # Set up bottom options layout
         layout_bottom_options = QHBoxLayout()
@@ -316,93 +325,56 @@ class StatsGui(QWidget, HubListener):
         # Get the indexes of all the selected components
         self.selected_indices = self.treeview.selectionModel().selectedRows()
 
-        newly_selected = np.setdiff1d(self.selected_indices, self.past_selected)
-            
-        for index in range (0, len(newly_selected)):
-                
-            # Check which view mode the tree is in to get the correct indices
-            if not self.component_mode:
-                if newly_selected[index].parent().parent().parent().row() == -1:
-                    # Whole data sets
-                    data_i = newly_selected[index].parent().row()
-                    comp_i = newly_selected[index].row()
-                    subset_i = -1
-                    uuid_val = newly_selected[index].data()
-                else:
-                    # Subsets
-                    data_i = newly_selected[index].parent().row()
-                    comp_i = newly_selected[index].row()
-                    subset_i = newly_selected[index].parent().parent().row()
-                    uuid_val = newly_selected[index].data()
-            
-            else:
-                data_i = newly_selected[index].parent().parent().row()
-                comp_i = newly_selected[index].parent().row()
-                subset_i = newly_selected[index].row() - 1
-                uuid_val = newly_selected[index].parent().data()
+        # Set up items arrays so that uuid can be accessed
+        self.selected_items = []
+        if self.component_mode:
+            for index in self.selected_indices:
+                self.selected_items.append(self.model_components.itemFromIndex(index))
+        else:
+            for index in self.selected_indices:
+                self.selected_items.append(self.model_subsets.itemFromIndex(index))            
 
+        new_items = np.setdiff1d(self.selected_items, self.past_items)
+
+        for i in range(0, len(new_items)):
+            uuid_val = new_items[i].data()
+
+            data_i = self.uuid_dict[uuid_val][0]
+            comp_i = self.uuid_dict[uuid_val][1]
+            subset_i = self.uuid_dict[uuid_val][2]
+
+            print("d,c,s indices in added: ", data_i, comp_i, subset_i)
             is_subset = (subset_i != -1)
 
             # Check if its a subset and if so run subset stats
             if is_subset: 
                 self.runSubsetStats(subset_i, data_i, comp_i, uuid_val)
-
             else:
                 # Run standard data stats
-                self.runDataStats(data_i, comp_i, uuid_val)   
+                self.runDataStats(data_i, comp_i, uuid_val) 
+
+        dropped_items = np.setdiff1d(self.past_items, self.selected_items)
             
-        newly_dropped = np.setdiff1d(self.past_selected, self.selected_indices)
-        # print("len, newly_dropped: ", len(newly_dropped), newly_dropped)
-            
-        for index in range (0, len(newly_dropped)):
-                
-            # Check which view mode the tree is in to get the correct indices
-            if not self.component_mode:
-                data_i = newly_dropped[index].parent().row()
-                comp_i = newly_dropped[index].row()
-                subset_i = newly_dropped[index].parent().parent().row()
-                uuid_val = newly_dropped[index].data()
-            
-            else:
-                data_i = newly_dropped[index].parent().parent().row()
-                comp_i = newly_dropped[index].parent().row()
-                subset_i = newly_dropped[index].row() - 1
-                uuid_val = newly_dropped[index].parent().data()
-            
-            is_subset = newly_dropped[index].parent().parent().parent().row() == 1 or (self.switch_mode.text() == 'Sort tree by subsets' and subset_i != -1)
+        for i in range (0, len(dropped_items)):
+            uuid_val = dropped_items[i].data()
 
-            if is_subset:
-                try:
-                    # Get the indices that match the component, dataset, and subset requirements
-                    # idx_c = np.where(self.data_frame['Component'] == self.dc[data_i].components[comp_i].label)
-                    # idx_d = np.where(self.data_frame['Dataset'] == self.dc[data_i].label)
-                    # idx_s = np.where(self.data_frame['Subset'] == self.dc[data_i].subsets[subset_i].label)
-                    # idx1 = np.intersect1d(idx_c, idx_d)
-                    # idx2 = np.intersect1d(idx1, idx_s)
-                    idx2 = self.data_frame['uuid'].index(uuid_val) 
+            data_i = self.uuid_dict[uuid_val][0]
+            comp_i = self.uuid_dict[uuid_val][1]
+            subset_i = self.uuid_dict[uuid_val][2]
 
-                    self.data_frame = self.data_frame.drop(idx2)
-                except:
-                    pass
+            print("d,c,s indices in dropped: ", data_i, comp_i, subset_i)
+            is_subset = (subset_i != -1)
 
-            else:
-                try:
-                # Find the index in the table of the unchecked element, if it's in the table
+            try:
+                idx2 = np.where(self.data_frame['uuid'] == uuid_val)[0][0]
+                print(idx2)
 
-                    # Find the matching component and dataset indices and intersect them to get the unique index
-                    # idx_c = np.where(self.data_frame['Component'] == self.dc[data_i].components[comp_i].label)
-                    # idx_d = np.where(self.data_frame['Dataset'] == self.dc[data_i].label)
-                    # idx_s = np.where(self.data_frame['Subset'] == '--')
-                    # idx1 = np.intersect1d(idx_c, idx_d)
-                    # idx2 = np.intersect1d(idx1, idx_s)
-                    idx2 = np.where(self.data_frame['uuid'] == uuid_val)
-
-                    self.data_frame = self.data_frame.drop(idx2)
-                except:
-                    pass
+                self.data_frame = self.data_frame.drop(idx2)
+            except:
+                pass
         
         # Update the past selected indices
-        self.past_selected = self.selected_indices
+        self.past_items = self.selected_items
         
         model = pandasModel(self.data_frame, self.dc)
         
@@ -415,11 +387,10 @@ class StatsGui(QWidget, HubListener):
         '''
         Runs statistics for the component comp_i of data set data_i
         '''
-
         subset_label = "--"
         data_label = self.dc[data_i].label   
         comp_label = self.dc[data_i].components[comp_i].label # add to the name array to build the table
-        # uuid_val = self.dc[data_i].components[comp_i].uuid
+        uuid_val = self.dc[data_i].components[comp_i].uuid
         
         # Build the cache key
         # cache_key = subset_label + data_label + comp_label
@@ -430,9 +401,9 @@ class StatsGui(QWidget, HubListener):
             try:
                 column_data = self.cache_stash[cache_key]
             except:
-                column_data = self.newDataStats(data_i, comp_i)
+                column_data = self.newDataStats(data_i, comp_i, uuid_val)
         else:
-            column_data = self.newDataStats(data_i, comp_i)    
+            column_data = self.newDataStats(data_i, comp_i, uuid_val)    
      
         # Save the accurate data in self.data_accurate
         column_df = pd.DataFrame(column_data, columns=self.headings)
@@ -577,19 +548,8 @@ class StatsGui(QWidget, HubListener):
     
         # Get the values from the self.data_accurate array and append them
         for i in range (0, len(self.data_frame)):
-            # Traverse through the data_frame, which represents the data in the table
-            # Get the name of the component, dataset, and subset of each row  
-            # component = self.data_frame['Component'][i]
-            # dataset = self.data_frame['Dataset'][i]
-            # subset = self.data_frame['Subset'][i]
             uuid_val = self.data_frame['uuid'][i]
                
-            # Find the index of data_accurate that corresponds to the data
-            # idx_c = np.where(component == self.data_accurate['Component'])
-            # idx_d = np.where(dataset == self.data_accurate['Dataset'])
-            # idx_s = np.where(subset == self.data_accurate['Subset'])
-            # idx1 = np.intersect1d(idx_c, idx_d)
-            # idx2 = np.intersect1d(idx1, idx_s)[0] 
             idx2 = self.data_accurate['uuid'].index(uuid_val)
                 
             # Append the values to the stat arrays, formatted with the string built above
@@ -808,6 +768,16 @@ class StatsGui(QWidget, HubListener):
         self.treeview.setModel(self.model_subsets)
         self.treeview.setUniformRowHeights(True)
 
+        # Match the uuids to an array of data/component/subset indices
+        self.uuid_dict = dict()
+        for d in range(0, len(self.dc)):
+            for c in range(0, len(self.dc[d].components)):
+                self.uuid_dict[self.dc[d].components[c].uuid] = [d, c, -1]
+                for s in range(0, len(self.dc[d].subsets)):
+                    self.uuid_dict[self.dc[d].subsets[s].components[c].uuid] = [d, c, s]   
+
+        print(self.uuid_dict)
+
         # populate the tree
         # Make all the datasets be parents, and make it so they are not selectable
         parent_data = QStandardItem('{}'.format('Data'))
@@ -826,6 +796,9 @@ class StatsGui(QWidget, HubListener):
                 child = QStandardItem('{}'.format(str(self.dc[i].components[j])))
                 child.setEditable(False)
                 child.setData(self.dc[i].components[j].uuid)
+
+                print(child.data(), child.text())
+
                 child.setIcon(helpers.layer_icon(self.dc[i]))
                     
                 # Add to the subset_dict
@@ -1010,6 +983,15 @@ class StatsGui(QWidget, HubListener):
         self.treeview.setModel(self.model_components)
         self.treeview.setUniformRowHeights(True)
     
+        # Match the uuids to an array of data/component/subset indices
+        self.uuid_dict = dict()
+        for d in range(0, len(self.dc)):
+            for c in range(0, len(self.dc[d].components)):
+                self.uuid_dict[self.dc[d].components[c].uuid] = [d, c, -1]
+                for s in range(0, len(self.dc[d].subsets)):
+                    self.uuid_dict[self.dc[d].subsets[s].components[c].uuid] = [d, c, s]   
+        print(self.uuid_dict)
+
         # Populate the tree
         # Make all the datasets be parents, and make it so they are not selectable
         
@@ -1028,7 +1010,7 @@ class StatsGui(QWidget, HubListener):
                 parent.setSelectable(False)
                 
                 child = QStandardItem('{}'.format('All data (' + self.dc.labels[i] + ')'))
-                child.setData(self.dc[i].uuid)
+                child.setData(self.dc[i].components[k].uuid)
                 child.setIcon(helpers.layer_icon(self.dc[i]))
                 child.setEditable(False)
                 child.setIcon(helpers.layer_icon(self.dc[i]))
@@ -1041,7 +1023,7 @@ class StatsGui(QWidget, HubListener):
                 
                 for j in range(0, len(self.dc.subset_groups)):
                     child = QStandardItem('{}'.format(self.dc.subset_groups[j].label))
-                    child.setData(self.dc.subset_groups[j].components[k].uuid)
+                    child.setData(self.dc[i].subsets[j].components[k].uuid)
                     child.setEditable(False)
                     child.setIcon(helpers.layer_icon(self.dc.subset_groups[j]))
                         
@@ -1099,18 +1081,9 @@ class StatsGui(QWidget, HubListener):
             
         for i in range(0, len(self.data_frame)):
             # Traverse through the dataframe and get the names of the component, dataset, and subset
-            component = self.data_frame['Component'][i]
-            dataset = self.data_frame['Dataset'][i]
-            subset = self.data_frame['Subset'][i]
 
             uuid_val = self.data_frame['uuid'][i]
                 
-            # Pull the correct index of the data in data_accurate
-            # idx_c = np.where(component == self.data_accurate['Component'])
-            # idx_d = np.where(dataset == self.data_accurate['Dataset'])
-            # idx_s = np.where(subset == self.data_accurate['Subset'])
-            # idx1 = np.intersect1d(idx_c, idx_d)
-            # idx2 = np.intersect1d(idx1, idx_s)[0] 
             idx2 = self.data_accurate['uuid'].index(uuid_val)
                 
             # Format the data in data_accurate
@@ -1131,6 +1104,13 @@ class StatsGui(QWidget, HubListener):
     def subsetStateUpdate(self, subset):
         # Find the indices of that subset in the treeview and uncheck/recheck in treeview
         # myPressedEvent and run stats will handle the rest
+
+        # Match the uuids to an array of data/component/subset indices
+        for d in range(0, len(self.dc)):
+            for s in range(0, len(self.dc[d].subsets)):
+                for c in range(0, len(self.dc[d].components)):
+                    self.uuid_dict[self.dc[d].subsets[s].components[c].uuid] = [d, c, s]
+
         selected_items = []
         indices = []
         no_update_indices = []
