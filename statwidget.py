@@ -67,10 +67,10 @@ class pandasModel(QtCore.QAbstractTableModel):
     def data(self, index, role=Qt.DisplayRole):
         if index.isValid():
             if role == Qt.BackgroundRole:
-                # Get the uuid
-                uuid = self.data_frame.values[index.row()][8]
-                # Get the subset label
+                # get the subset
                 subset = self.data_frame.values[index.row()][0]
+                # get the uuid
+                uuid = self.data_frame.values[index.row()][8]
                 # Get the subset index
                 if (subset == "--"): 
                     subset_index = -1
@@ -169,12 +169,8 @@ class StatsGui(QWidget, HubListener):
             self.all_comp_names.append(component_names)
             component_names = []
 
-        # Match the uuids to an array of data/component/subset indices
-        # Maybe simplify this to one dict that keys by tuple(uuid, subset index (-1 if full data set))
-        # Dict for full data sets
+        # Keys tuple([uuid, subset index (-1 if full dataset)]) to [data index, component index, subset index]
         self.uuid_dict = dict()
-        # Dict for subsets
-        # self.uuid_dict_subsets = dict();
 
         for d in range(0, len(self.dc)):
             for c in range(0, len(self.dc[d].components)):
@@ -220,9 +216,12 @@ class StatsGui(QWidget, HubListener):
         self.data_frame = pd.DataFrame(columns=self.headings) 
         # set up data accruate to use the heading list with uuid
         self.data_accurate = pd.DataFrame(columns=self.headings)
+
         self.model = pandasModel(self.data_frame, self.dc)
 
         self.table.setModel(self.model) 
+        # Hide uuid
+        self.table.setColumnHidden(8, True);
         
         # Set up tree view and fix it to the top half of the window
         self.treeview = QTreeView(self)
@@ -422,14 +421,15 @@ class StatsGui(QWidget, HubListener):
             idx = np.intersect1d(idxu, idxs)[0]
 
             self.data_frame = self.data_frame.drop(idx)
-            print(self.data_frame)
         
         # Update the past selected indices
         self.past_items = self.selected_items
     
         model = pandasModel(self.data_frame, self.dc)
         self.table.setModel(model)
+        self.table.setColumnHidden(8, True);
     
+
     def runDataStats (self, key):
         '''
         Runs statistics for the component comp_i of data set data_i
@@ -453,6 +453,8 @@ class StatsGui(QWidget, HubListener):
         self.buildDataFrame(column_data, data_label, comp_label, subset_label)
     
 
+    # This decorator can be used to profile a function by time
+    # @profile(print_stats=20, dump_stats=True)
     def newDataStats(self, key):
         # take in a tuple
         # Generates new data for a dataset that has to be calculated
@@ -615,8 +617,12 @@ class StatsGui(QWidget, HubListener):
         # Build the column_data and update the data_frame
         column_data = np.asarray([subset_labels, data_labels, comp_labels, mean_vals, median_vals, min_vals, max_vals, sum_vals, uuid_vals]).transpose()
         self.data_frame = pd.DataFrame(column_data, columns=self.headings)
+
         model = pandasModel(self.data_frame, self.dc)
+
         self.table.setModel(model)
+        self.table.setColumnHidden(8, True)
+
 
     # Either expands or collapses the tree
     def expandClicked(self):
@@ -626,6 +632,7 @@ class StatsGui(QWidget, HubListener):
         else:
             self.treeview.collapseAll()
             self.expand_data.setText("Expand all data and subsets")
+
 
     def visibleClicked(self):
         # Select all visible components
@@ -663,6 +670,7 @@ class StatsGui(QWidget, HubListener):
         else:
             self.treeview.selectAll()
             
+
     def allClicked(self):
         # Expand and select all components
         # If more than 20 rows will be added, ask user if they'd like to continue or cancel
@@ -701,6 +709,7 @@ class StatsGui(QWidget, HubListener):
             # Show window
             message_widget.show() 
 
+
     def noneClicked(self):
         # Clear the selection from the tree
         self.treeview.clearSelection()
@@ -710,7 +719,9 @@ class StatsGui(QWidget, HubListener):
         self.data_frame = pd.DataFrame(columns=self.headings)
         model = pandasModel(self.data_frame, self.dc)
         self.table.setModel(model)
+        self.table.setColumnHidden(8, True)
         
+
     def exportToFile(self):
         file_name, fltr = compat.getsavefilename(caption="Choose an output filename")
         
@@ -752,8 +763,7 @@ class StatsGui(QWidget, HubListener):
                 selected.append(key)
 
         # Clear the selection
-        self.treeview.clearSelection()
-        self.past_items = []
+        self.noneClicked()
 
         # Set Expand/collapse button to "expand all"
         self.expand_data.setText("Expand all data and subsets")       
@@ -771,21 +781,12 @@ class StatsGui(QWidget, HubListener):
         else:
             self.generateSubsetView()
         
-        # Factor out?
-        self.treeview.setUniformRowHeights(True)
-        
         # Make the table update whenever the selection in the tree is changed
         selection_model = QItemSelectionModel(self.model_subsets)
         self.treeview.setSelectionModel(selection_model)
         selection_model.selectionChanged.connect(self.myPressedEvent)
 
-        # Clear the table 
-        self.data_frame = pd.DataFrame(columns=self.headings)
-        model = pandasModel(self.data_frame, self.dc)
-        self.table.setModel(model)
-        
         # Select rows that should be selected
-        
         for i in range(0, len(selected)):
             key = selected[i]
             index = self.subset_dict[key]
@@ -925,15 +926,11 @@ class StatsGui(QWidget, HubListener):
                 key = item.data()
                 selected.append(key)
         
-        # Clear the selection and the past_items
-        self.treeview.clearSelection()
-        self.past_items = []
+        # Clear the selection
+        self.noneClicked()
 
         # Set Expand/collapse button to "expand all"
         self.expand_data.setText("Expand all data and subsets")
-        
-        # self.selection_model = QAbstractItemView.MultiSelection
-        # self.treeview.setSelectionMode(self.selection_model)
         
         # See if the model already exists and doesn't need to be updated
         if self.no_update and not self.updateComponentSort:
@@ -944,17 +941,10 @@ class StatsGui(QWidget, HubListener):
         else:
             self.generateComponentView()
 
-        # self.treeview.setUniformRowHeights(True)
-        
         # Make the table update whenever the tree selection is changed
         selection_model = QItemSelectionModel(self.model_components)
         self.treeview.setSelectionModel(selection_model)
         selection_model.selectionChanged.connect(self.myPressedEvent)
- 
-        # Clear the table 
-        self.data_frame = pd.DataFrame(columns=self.headings)
-        model = pandasModel(self.data_frame, self.dc)
-        self.table.setModel(model)
 
         # Goes through previously selected rows
         for i in range(0, len(selected)):
@@ -990,7 +980,6 @@ class StatsGui(QWidget, HubListener):
             # Make all the data components be children, nested under their parent
             for k in range(0,len(self.dc[i].components)):
                 parent = QStandardItem('{}'.format(str(self.dc[i].components[k])))
-                # parent.setData(tuple([self.dc[i].components[k].uuid, -1]))
                 parent.setEditable(False)
                 parent.setSelectable(False)
                 
@@ -1001,9 +990,6 @@ class StatsGui(QWidget, HubListener):
                 child.setEditable(False)
                 child.setIcon(helpers.layer_icon(self.dc[i]))
 
-                # Add to the uuid to item dict
-                # self.component_uuid_to_item[self.dc[i].components[k].uuid] = child  
-                    
                 parent.appendRow(child)
                 self.num_rows = self.num_rows + 1
                 
@@ -1023,9 +1009,6 @@ class StatsGui(QWidget, HubListener):
                         child.setSelectable(False)
                         child.setForeground(QtGui.QBrush(Qt.gray)) 
 
-                    # Add to the uuid to item dict
-                    # self.component_uuid_to_item[self.dc[i].subsets[j].components[k].uuid] = child  
-
                     parent.appendRow(child)
                     self.num_rows = self.num_rows + 1
                 
@@ -1035,15 +1018,8 @@ class StatsGui(QWidget, HubListener):
             # Fill out the dict now that the indices are connected to the QStandardItemModel
             for i in range(0, grandparent.rowCount()):
                 for j in range(0, grandparent.child(i).rowCount()):
-                    # if grandparent.child(i).child(j).row() == 0:
-                        # key = grandparent.child(i).child(j).text() + grandparent.child(i).text()
-                        # changed to child(i).child(j)
                     key = grandparent.child(i).child(j).data()
                     self.component_dict[key] = grandparent.child(i).child(j).index()
-                    # else:
-                        # key = grandparent.child(i).child(j).text() + " (" + grandparent.text() + ")" + grandparent.child(i).text()
-                        # key = grandparent.child(i).data()
-                        # self.component_dict[key] = grandparent.child(i).child(j).index()
     
       
     def subsetStateUpdate(self, subset):
