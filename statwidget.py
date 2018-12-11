@@ -1,3 +1,4 @@
+
 import sys
 from glue.core.data_factories import load_data
 from glue.core import DataCollection, Hub, HubListener, Data, coordinates
@@ -18,6 +19,7 @@ from glue.icons.qt import helpers
 import pandas as pd
 from pandas import DataFrame
 import numpy as np
+from profilestats import profile
 
 
 class pandasModel(QtCore.QAbstractTableModel):
@@ -30,18 +32,26 @@ class pandasModel(QtCore.QAbstractTableModel):
 
         # Should factor out for easier maintenance between pandas model and statsgui? 
         # Dict for full data sets
+        # key by tuples
         self.uuid_dict = dict()
         # Dict for subsets
-        self.uuid_dict_subsets = dict()
+        # self.uuid_dict_subsets = dict()
+        self.subset_name_index = dict()
 
         # fill out the dicts
         for d in range(0, len(self.dc)):
             for c in range(0, len(self.dc[d].components)):
+                # key by tuple
+                key = tuple([self.dc[d].components[c].uuid, -1])
                 # for the non subsets, set subset index to -1
-                self.uuid_dict[self.dc[d].components[c].uuid] = [d, c, -1]
+                self.uuid_dict[key] = [d, c, -1]
                 # don't populate for subsets- uuid are the same
                 for s in range(0, len(self.dc[d].subsets)):
-                    self.uuid_dict_subsets[self.dc[d].subsets[s].components[c].uuid] = [d, c, s]   
+                    # key by tuple
+                    key = tuple([self.dc[d].subsets[s].components[c].uuid, s])
+                    self.uuid_dict[key] = [d, c, s] 
+                    # key subset name to index
+                    self.subset_name_index[self.dc[d].subsets[s].label] = s  
 
         # Create an array of subset labels
         for i in range(0, len(self.dc.subset_groups)):
@@ -62,15 +72,16 @@ class pandasModel(QtCore.QAbstractTableModel):
                 uuid = self.data_frame.values[index.row()][8]
                 # Get the subset label
                 subset = self.data_frame.values[index.row()][0]
-
-                # pandas model can't access uuid dict- have to make its own 
-                # this will get data index no matter whether subset or not
-                data_index = self.uuid_dict[uuid][0]
-
+                # Get the subset index
                 if (subset == "--"): 
-                    subset_index = self.uuid_dict[uuid][2]
+                    subset_index = -1
                 else:
-                    subset_index = self.uuid_dict_subsets[uuid][2]
+                    subset_index = self.subset_name_index[subset]
+
+                # get the data index from the uuid_dict
+                key = tuple([uuid, subset_index])
+
+                data_index = self.uuid_dict[key][0]
 
                 transparency = 60
                 
@@ -115,7 +126,7 @@ class StatsGui(QWidget, HubListener):
     This class accepts a glue data collection object, and builds an interactive window
     to display basic statistics (e.g. mean, median, mode) about each dataset
     '''
-    
+    @profile(print_stats=20, dump_stats=True)
     def __init__(self, dc):
 
         # Initialize the object as a QWidget with a HubListener
@@ -164,15 +175,18 @@ class StatsGui(QWidget, HubListener):
         # Dict for full data sets
         self.uuid_dict = dict()
         # Dict for subsets
-        self.uuid_dict_subsets = dict();
+        # self.uuid_dict_subsets = dict();
 
         for d in range(0, len(self.dc)):
             for c in range(0, len(self.dc[d].components)):
                 # for the non subsets, set subset index to -1
-                self.uuid_dict[self.dc[d].components[c].uuid] = [d, c, -1]
-                # don't populate for subsets- uuid are the same
+                # create tuple for key 
+                key = tuple([self.dc[d].components[c].uuid, -1])
+                self.uuid_dict[key] = [d, c, -1]
                 for s in range(0, len(self.dc[d].subsets)):
-                    self.uuid_dict_subsets[self.dc[d].subsets[s].components[c].uuid] = [d, c, s]                   
+                    # create tuple for key
+                    key = tuple([self.dc[d].subsets[s].components[c].uuid, s])
+                    self.uuid_dict[key] = [d, c, s]                   
 
         # Set the title of the main GUI window
         self.setWindowTitle('Statistics')
@@ -361,7 +375,7 @@ class StatsGui(QWidget, HubListener):
         # Get the indexes of all the selected components
         self.selected_indices = self.treeview.selectionModel().selectedRows()
 
-        # Set up items arrays so that uuid can be accessed
+        # Set up items arrays so that key can be accessed
         self.selected_items = []
         if self.component_mode:
             for index in self.selected_indices:
@@ -373,44 +387,51 @@ class StatsGui(QWidget, HubListener):
         new_items = np.setdiff1d(self.selected_items, self.past_items)
 
         for i in range(0, len(new_items)):
-            uuid_val = new_items[i].data()[0]
+            # key by tuple
+            key = new_items[i].data()
 
-            data_i = self.uuid_dict[uuid_val][0]
-            comp_i = self.uuid_dict[uuid_val][1]
-
+            data_i = self.uuid_dict[key][0]
+            comp_i = self.uuid_dict[key][1]
+            subset_i = self.uuid_dict[key][2]
             # Check if it's a subset
-            if new_items[i].data()[1] != -1:
-                subset_i = self.uuid_dict_subsets[uuid_val][2];
+            # if new_items[i].data()[1] != -1:
+            #     subset_i = self.uuid_dict_subsets[uuid_val][2];
 
-            else:
-                subset_i = self.uuid_dict[uuid_val][2]
+            # else:
+            #     subset_i = self.uuid_dict[uuid_val][2]
 
             # Check if its a subset and if so run subset stats
             if subset_i != -1: 
-                self.runSubsetStats(uuid_val)
+                # pass tuple into function
+                self.runSubsetStats(key)
             else:
                 # Run standard data stats
-                self.runDataStats(uuid_val) 
+                # pass tuple into function
+                self.runDataStats(key) 
 
         dropped_items = np.setdiff1d(self.past_items, self.selected_items)
             
         for i in range (0, len(dropped_items)):
-            uuid_val = dropped_items[i].data()[0]
+            key = dropped_items[i].data()
 
-            data_i = self.uuid_dict[uuid_val][0]
-            comp_i = self.uuid_dict[uuid_val][1]
+            data_i = self.uuid_dict[key][0]
+            comp_i = self.uuid_dict[key][1]
+            subset_i = self.uuid_dict[key][2]
 
-            # check if item is a subset item 
-            if dropped_items[i].data()[1] != -1:
-                subset_i = self.uuid_dict_subsets[uuid_val][2];
+            # # check if item is a subset item 
+            # if dropped_items[i].data()[1] != -1:
+            #     subset_i = self.uuid_dict_subsets[uuid_val][2];
 
-            else:
-                subset_i = self.uuid_dict[uuid_val][2]
+            # else:
+            #     subset_i = self.uuid_dict[uuid_val][2]
 
-            is_subset = (subset_i != -1)
+            # is_subset = (subset_i != -1)
 
-            idxu = np.where(self.data_frame['uuid'] == uuid_val)[0]
+            # key[0] is the uuid (key is tuple([uuid, index of subset (-1 if not a subset)]))
+            idxu = np.where(self.data_frame['uuid'] == key[0])[0]
+
             if (subset_i == -1):
+                # not a subset
                 idxs = np.where(self.data_frame['Subset'] == '--')[0]
             else:
                 idxs = np.where(self.data_frame['Subset'] == self.dc.subset_groups[subset_i].label)[0]
@@ -429,28 +450,27 @@ class StatsGui(QWidget, HubListener):
         self.table.setSortingEnabled(True)
         self.table.setShowGrid(False)  
     
-    def runDataStats (self, uuid_val):
+    def runDataStats (self, key):
         '''
         Runs statistics for the component comp_i of data set data_i
         '''
         subset_label = "--"
-        data_i = self.uuid_dict[uuid_val][0]
-        comp_i = self.uuid_dict[uuid_val][1]
+        data_i = self.uuid_dict[key][0]
+        comp_i = self.uuid_dict[key][1]
 
         data_label = self.dc[data_i].label
         comp_label = self.dc[data_i].components[comp_i].label
 
-        # Build the cache key
-        cache_key = uuid_val
+        # Build the cache key- take the uuid from the key
         
         # See if the values have already been cached
         if self.no_update:
-            if (cache_key in self.cache_stash):
-                column_data = self.cache_stash[cache_key]
+            if (key in self.cache_stash):
+                column_data = self.cache_stash[key]
             else:
-                column_data = self.newDataStats(uuid_val)
+                column_data = self.newDataStats(key)
         else:
-            column_data = self.newDataStats(uuid_val)    
+            column_data = self.newDataStats(key)    
      
         # Save the accurate data in self.data_accurate
         # Factor out? Streamline to avoid doing a new dataframe every time? 
@@ -474,23 +494,24 @@ class StatsGui(QWidget, HubListener):
 
         # Create the column data array and append it to the data frame
         # can this be changed to [array] no transpose? 
-        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [uuid_val]]).transpose()
+        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [key[0]]]).transpose()
         column_df = pd.DataFrame(column_data, columns=self.headings)
         self.data_frame = self.data_frame.append(column_df, ignore_index=True)
     
-    def newDataStats(self, uuid_val):
+    def newDataStats(self, key):
+        # take in a tuple
         # Generates new data for a dataset that has to be calculated
 
         subset_label = "--"
 
-        data_i = self.uuid_dict[uuid_val][0]
-        comp_i = self.uuid_dict[uuid_val][1]
+        data_i = self.uuid_dict[key][0]
+        comp_i = self.uuid_dict[key][1]
 
         data_label = self.dc[data_i].label
         comp_label = self.dc[data_i].components[comp_i].label
 
-        # Build the cache key
-        cache_key = uuid_val
+        # # Build the cache key
+        # cache_key = uuid_val
 
         # Find the stat values
         # Save the data in the cache 
@@ -502,36 +523,37 @@ class StatsGui(QWidget, HubListener):
         sum_val = self.dc[data_i].compute_statistic('sum', self.dc[data_i].components[comp_i])
 
         # can this be an array no transpose?
-        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [uuid_val]]).transpose()
+        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [key[0]]]).transpose()
             
-        self.cache_stash[cache_key] = column_data
+        self.cache_stash[key] = column_data
 
         return column_data
 
 
-    def runSubsetStats (self, uuid_val):
+    def runSubsetStats (self, key):
         '''
         Runs statistics for the subset subset_i with respect to the component comp_i of data set data_i
+        Takes in a tuple key (tuple([uuid, subset index]))
         '''
-        data_i = self.uuid_dict[uuid_val][0]
-        comp_i = self.uuid_dict[uuid_val][1]
-        subset_i = self.uuid_dict_subsets[uuid_val][2]
+        data_i = self.uuid_dict[key][0]
+        comp_i = self.uuid_dict[key][1]
+        subset_i = self.uuid_dict[key][2]
 
         data_label = self.dc[data_i].label
         comp_label = self.dc[data_i].components[comp_i].label
         subset_label = self.dc[data_i].subsets[subset_i].label
 
-        # Build the cache key
-        cache_key = uuid_val
+        # # Build the cache key
+        # cache_key = uuid_val
 
         if self.no_update:
             # make a different cache for subset data
-            if cache_key in self.cache_subsets:
-                column_data = self.cache_subsets[cache_key]
+            if key in self.cache_subsets:
+                column_data = self.cache_subsets[key]
             else:
-                column_data = self.newSubsetStats(uuid_val)
+                column_data = self.newSubsetStats(key)
         else:
-            column_data = self.newSubsetStats(uuid_val)
+            column_data = self.newSubsetStats(key)
         
         # Factor out- streamline to avoid making a new dataframe every time? 
 
@@ -554,24 +576,25 @@ class StatsGui(QWidget, HubListener):
         sum_val = string % Decimal(column_data[0][7])
         
         # Create the column data array and append it to the data frame
-        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [uuid_val]]).transpose()
+        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [key[0]]]).transpose()
         column_df = pd.DataFrame(column_data, columns=self.headings)
         self.data_frame = self.data_frame.append(column_df, ignore_index=True)  
 
-    def newSubsetStats(self, uuid_val):
+    def newSubsetStats(self, key):
         # Generates new data for a subset that needs to be calculated
+        # takes in a tuple ([uuid, subset index])
 
         # # generate the indices from the uuid_val and the uuid_dict
-        data_i = self.uuid_dict[uuid_val][0]
-        comp_i = self.uuid_dict[uuid_val][1]
-        subset_i = self.uuid_dict_subsets[uuid_val][2]
+        data_i = self.uuid_dict[key][0]
+        comp_i = self.uuid_dict[key][1]
+        subset_i = self.uuid_dict[key][2]
 
         data_label = self.dc[data_i].label
         comp_label = self.dc[data_i].components[comp_i].label
         subset_label = self.dc[data_i].subsets[subset_i].label
 
-        # Build the cache key
-        cache_key = uuid_val
+        # # Build the cache key
+        # cache_key = uuid_val
 
         mean_val = self.dc[data_i].compute_statistic('mean', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc[data_i].subsets[subset_i].subset_state)
         median_val = self.dc[data_i].compute_statistic('median', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state)       
@@ -579,9 +602,10 @@ class StatsGui(QWidget, HubListener):
         max_val = self.dc[data_i].compute_statistic('maximum', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state)      
         sum_val = self.dc[data_i].compute_statistic('sum', self.dc[data_i].subsets[subset_i].components[comp_i], subset_state=self.dc.subset_groups[subset_i].subset_state) 
 
-        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [uuid_val]]).transpose()
+        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [key[0]]]).transpose()
 
-        self.cache_subsets[cache_key] = column_data  
+        # key by tuple
+        self.cache_subsets[key] = column_data  
 
         return column_data
     
@@ -779,10 +803,13 @@ class StatsGui(QWidget, HubListener):
             # try using an array instead of a dict- a dict isn't necessary
             selected = []
 
+            print("in sort by subsets (keys that were selected)")
             for i in range(0, len(self.selected_indices)):
                 item = self.model_components.itemFromIndex(self.selected_indices[i])
                 key = item.data();
                 selected.append(key)
+                # print out keys that are saved here
+                print(key)
 
         # Clear the selection
         self.treeview.clearSelection()
@@ -821,10 +848,14 @@ class StatsGui(QWidget, HubListener):
         # Select rows that should be selected
         
         # Could be factored out?
+
         sel_mod = self.treeview.selectionModel()
+        print("keys and indexes in sort by subsets (rows that get selected): ")
         
         for i in range(0, len(selected)):
-            index = self.subset_dict[selected[i]]
+            key = selected[i]
+            index = self.subset_dict[key]
+            print(key, index)
             self.treeview.setCurrentIndex(index)
     
         # Factor out?
@@ -957,19 +988,22 @@ class StatsGui(QWidget, HubListener):
         # Clear the num_rows
         self.num_rows = 0
         
-        # Clear the data_accurate
+        # Clear the data_accurate- why?
         self.data_accurate = pd.DataFrame(columns=self.headings)
         
         # Save the selected rows from the subset view if applicable
         if (self.model_subsets != None):
             selected = []
 
+            print("in sort by components: keys that were selected")
+
             for i in range(0, len(self.selected_indices)):
                 item = self.model_subsets.itemFromIndex(self.selected_indices[i])
                 key = item.data()
                 selected.append(key)
+                print(key)
         
-        # Clear the selection
+        # Clear the selection- somehow things are not getting dropped in myPressedEvent how they should
         self.treeview.clearSelection()
         
         # Set Expand/collapse button to "expand all"
@@ -1005,12 +1039,14 @@ class StatsGui(QWidget, HubListener):
         # Select the rows that should be selected
         sel_mod = self.treeview.selectionModel()
 
+        print("keys and indexes in sort by components (rows that get selected): ")
         # Goes through previously selected rows
         for i in range(0, len(selected)):
             # Gets the key (the uuid) from the dict
             key = selected[i]
             # Gets the index using the component_dict
             index = self.component_dict[key]
+            print(key, index)
             # Selects that index
             self.treeview.setCurrentIndex(index)
     
@@ -1106,6 +1142,7 @@ class StatsGui(QWidget, HubListener):
         for d in range(0, len(self.dc)):
             for s in range(0, len(self.dc[d].subsets)):
                 for c in range(0, len(self.dc[d].components)):
+                    # will need to change this to key by tuple
                     self.uuid_dict[self.dc[d].subsets[s].components[c].uuid] = [d, c, s]
 
         selected_items = []
@@ -1531,5 +1568,6 @@ class StatsGui(QWidget, HubListener):
                     self.treeview.setCurrentIndex(index)
 
         self.no_update = True
+
 
 
