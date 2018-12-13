@@ -202,7 +202,6 @@ class StatsGui(QWidget, HubListener):
         
         # Set up the headings
         self.headings = ('Subset', 'Dataset', 'Component', 'Mean', 'Median', 'Minimum', 'Maximum', 'Sum', 'uuid')
-        # self.all_headings = ('Subset', 'Dataset', 'Component', 'Mean', 'Median', 'Minimum', 'Maximum', 'Sum', 'uuid')
         
         # Set up the QTableView Widget
         self.table = QTableView(self)
@@ -264,6 +263,11 @@ class StatsGui(QWidget, HubListener):
         self.updateSubsetSort = False
         self.updateComponentSort = False
         
+        # Set up dict for keying treeview labels to items in subset view
+        self.subset_label_item = dict()
+        # Set up dict for keying treeview labels to items in component view
+        self.component_label_item = dict()
+
         # Sort by subsets as a default
         self.sortBySubsets()
         
@@ -354,14 +358,14 @@ class StatsGui(QWidget, HubListener):
         self.cache_stash = dict()
 
             # Allow the widget to listen for messages
-#         dc.hub.subscribe(self, SubsetUpdateMessage, handler=self.receive_message)
+        # dc.hub.subscribe(self, SubsetUpdateMessage, handler=self.receive_message)
 
         # Change this so that different types of messages are handled differently
-        self.dc.hub.subscribe(self, DataMessage, handler=self.messageReceived)
-        self.dc.hub.subscribe(self, SubsetMessage, handler=self.messageReceived)  
-        self.dc.hub.subscribe(self, DataCollectionMessage, handler=self.messageReceived)
-        self.dc.hub.subscribe(self, LayerArtistUpdatedMessage, handler=self.messageReceived)
-        self.dc.hub.subscribe(self, NumericalDataChangedMessage, handler=self.messageReceived)
+        self.dc.hub.subscribe(self, DataMessage, handler=self.dataMessage)
+        self.dc.hub.subscribe(self, SubsetMessage, handler=self.subsetMessage)  
+        self.dc.hub.subscribe(self, DataCollectionMessage, handler=self.dcMessage)
+        self.dc.hub.subscribe(self, LayerArtistUpdatedMessage, handler=self.layerMessage)
+        self.dc.hub.subscribe(self, NumericalDataChangedMessage, handler=self.numDataMessage)
     
     def myPressedEvent (self, currentQModelIndex):
         ''' 
@@ -387,18 +391,7 @@ class StatsGui(QWidget, HubListener):
         for i in range(0, len(new_items)):
             # key by tuple
             key = new_items[i].data()
-
-            data_i = self.uuid_dict[key][0]
-            comp_i = self.uuid_dict[key][1]
-            subset_i = self.uuid_dict[key][2]
-
-            # Check if its a subset and if so run subset stats
-            if subset_i != -1: 
-                # pass tuple into function
-                self.runSubsetStats(key)
-            else:
-                # Run standard data stats, pass tuple into function
-                self.runDataStats(key) 
+            self.runStats(key)
 
         dropped_items = np.setdiff1d(self.past_items, self.selected_items)
             
@@ -430,25 +423,31 @@ class StatsGui(QWidget, HubListener):
         self.table.setColumnHidden(8, True);
     
 
-    def runDataStats (self, key):
+    def runStats (self, key):
         '''
-        Runs statistics for the component comp_i of data set data_i
+        Runs statistics for subsets or full data sets
         '''
-        subset_label = "--"
+
         data_i = self.uuid_dict[key][0]
         comp_i = self.uuid_dict[key][1]
+        subset_i = self.uuid_dict[key][2]
 
         data_label = self.dc[data_i].label
         comp_label = self.dc[data_i].components[comp_i].label
 
-        # See if the values have already been cached
-        if self.no_update:
-            if (key in self.cache_stash):
-                column_data = self.cache_stash[key]
-            else:
-                column_data = self.newDataStats(key)
+        if (subset_i == -1):
+            subset_label = "--"
         else:
-            column_data = self.newDataStats(key)    
+            subset_label = self.dc[data_i].subsets[subset_i].label
+
+        # See if the values have already been cached
+        if self.no_update and key in self.cache_stash:
+            column_data = self.cache_stash[key]
+        else:
+            if (subset_i == -1):
+                column_data = self.newDataStats(key)
+            else:
+                column_data = self.newSubsetStats(key)  
      
         self.buildDataFrame(column_data, data_label, comp_label, subset_label)
     
@@ -484,56 +483,6 @@ class StatsGui(QWidget, HubListener):
         return column_data
 
 
-    def buildDataFrame(self, column_data, data_label, comp_label, subset_label):
-        # Save the data in self.data_accurate
-        column_df = pd.DataFrame(column_data, columns=self.headings)
-        self.data_accurate = self.data_accurate.append(column_df, ignore_index=True)        
-        
-        # Format correctly- factor out? 
-        if self.isSci:
-            # Format in scientific notation
-            string = "%." + str(self.num_sigs) + 'E'
-        else:
-            # Format in standard notation
-            string = "%." + str(self.num_sigs) + 'F'            
-            
-        mean_val = string % Decimal(column_data[0][3])
-        median_val = string % Decimal(column_data[0][4])
-        min_val = string % Decimal(column_data[0][5])
-        max_val = string % Decimal(column_data[0][6])
-        sum_val = string % Decimal(column_data[0][7])
-        uuid_val = column_data[0][8]
-        
-        # Create the column data array and append it to the data frame
-        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [uuid_val]]).transpose()
-        column_df = pd.DataFrame(column_data, columns=self.headings)
-        self.data_frame = self.data_frame.append(column_df, ignore_index=True) 
-
-    def runSubsetStats(self, key):
-        '''
-        Runs statistics for the subset subset_i with respect to the component comp_i of data set data_i
-        Takes in a tuple key (tuple([uuid, subset index]))
-        '''
-        data_i = self.uuid_dict[key][0]
-        comp_i = self.uuid_dict[key][1]
-        subset_i = self.uuid_dict[key][2]
-
-        data_label = self.dc[data_i].label
-        comp_label = self.dc[data_i].components[comp_i].label
-        subset_label = self.dc[data_i].subsets[subset_i].label
-
-        if self.no_update:
-            # make a different cache for subset data
-            if key in self.cache_stash:
-                column_data = self.cache_stash[key]
-            else:
-                column_data = self.newSubsetStats(key)
-        else:
-            column_data = self.newSubsetStats(key)
-        
-        self.buildDataFrame(column_data, data_label, comp_label, subset_label)
-
-
     def newSubsetStats(self, key):
         # Generates new data for a subset that needs to be calculated
         # takes in a tuple ([uuid, subset index])
@@ -559,6 +508,32 @@ class StatsGui(QWidget, HubListener):
         self.cache_stash[key] = column_data  
 
         return column_data
+
+
+    def buildDataFrame(self, column_data, data_label, comp_label, subset_label):
+        # Save the data in self.data_accurate
+        column_df = pd.DataFrame(column_data, columns=self.headings)
+        self.data_accurate = self.data_accurate.append(column_df, ignore_index=True)        
+        
+        # Format correctly- factor out? 
+        if self.isSci:
+            # Format in scientific notation
+            string = "%." + str(self.num_sigs) + 'E'
+        else:
+            # Format in standard notation
+            string = "%." + str(self.num_sigs) + 'F'            
+            
+        mean_val = string % Decimal(column_data[0][3])
+        median_val = string % Decimal(column_data[0][4])
+        min_val = string % Decimal(column_data[0][5])
+        max_val = string % Decimal(column_data[0][6])
+        sum_val = string % Decimal(column_data[0][7])
+        uuid_val = column_data[0][8]
+        
+        # Create the column data array and append it to the data frame
+        column_data = np.asarray([[subset_label], [data_label], [comp_label], [mean_val], [median_val], [min_val], [max_val], [sum_val], [uuid_val]]).transpose()
+        column_df = pd.DataFrame(column_data, columns=self.headings)
+        self.data_frame = self.data_frame.append(column_df, ignore_index=True) 
     
 
     def sigchange(self, i):
@@ -895,16 +870,53 @@ class StatsGui(QWidget, HubListener):
 
         # Full datasets
         for i in range(0, parent_data.rowCount()):
+            # key label to item for message handling
+            self.addToLabelItem(parent_data.child(i))
+
             for j in range(0, parent_data.child(i).rowCount()):
+                # key label to item for message handling
+                self.addToLabelItem(parent_data.child(i).child(j))
+
                 key = parent_data.child(i).child(j).data()
                 self.subset_dict[key] = parent_data.child(i).child(j).index()
             
         # # Subsets
         for i in range(0, parent_subset.rowCount()):
+            # key label to item for message handling
+            self.addToLabelItem(parent_subset.child(i))
+
             for j in range(0, parent_subset.child(i).rowCount()):
+                # key label to item for message handling
+                self.addToLabelItem(parent_subset.child(i).child(j))  
+
                 for k in range(0, parent_subset.child(i).child(j).rowCount()):
+                    # key label to item for message handling
+                    self.addToLabelItem(parent_subset.child(i).child(j).child(k))
+
                     key = parent_subset.child(i).child(j).child(k).data()
                     self.subset_dict[key] = parent_subset.child(i).child(j).child(k).index()
+
+
+    def addToLabelItem(self, item):
+        # adds an item to self.subset_label_item or self.component_label_item
+        # get the correct dict
+        if (self.component_mode):
+            mydict = self.component_label_item
+        else:
+            mydict = self.subset_label_item
+
+        # check if key exists in dict
+        if item.text() in mydict:
+            # get current array
+            arr = mydict[item.text()]
+            # add the new item to the array
+            arr.append(item)
+            # set the array to be the value of the dict
+            mydict[item.text()] = arr
+
+        # if not create a new array
+        else:
+            mydict[item.text()] = [item]
 
         
     def sortByComponents(self):
@@ -1017,7 +1029,11 @@ class StatsGui(QWidget, HubListener):
                 
             # Fill out the dict now that the indices are connected to the QStandardItemModel
             for i in range(0, grandparent.rowCount()):
+                self.addToLabelItem(grandparent.child(i))
+
                 for j in range(0, grandparent.child(i).rowCount()):
+                    self.addToLabelItem(grandparent.child(i).child(j))
+
                     key = grandparent.child(i).child(j).data()
                     self.component_dict[key] = grandparent.child(i).child(j).index()
     
@@ -1027,11 +1043,12 @@ class StatsGui(QWidget, HubListener):
         # myPressedEvent and run stats will handle the rest
 
         # Match the uuids to an array of data/component/subset indices
-        for d in range(0, len(self.dc)):
-            for s in range(0, len(self.dc[d].subsets)):
-                for c in range(0, len(self.dc[d].components)):
-                    # will need to change this to key by tuple
-                    self.uuid_dict[self.dc[d].subsets[s].components[c].uuid] = [d, c, s]
+        # for d in range(0, len(self.dc)):
+        #     for s in range(0, len(self.dc[d].subsets)):
+        #         for c in range(0, len(self.dc[d].components)):
+        #             # will need to change this to key by tuple
+        #             self.uuid_dict[self.dc[d].subsets[s].components[c].uuid] = [d, c, s]
+        self.no_update = False
 
         selected_items = []
         indices = []
@@ -1076,385 +1093,134 @@ class StatsGui(QWidget, HubListener):
             self.treeview.setCurrentIndex(index)
 
 
-    def messageReceived(self, message):
-        # Refactor this so that there is a different listener for each type of message instead of many if statements
-        self.no_update = False
-        print("Message received:")
+    def dataMessage(self, message):
+        print("dataMessage:")
         print("{0}".format(message))
+        # print(message.sender)
+        # print(message.sender.uuid)
+        # relabel things in the tree and the table
+
+        # this doesn't work to do that
+        self.clearAndReselect()
+
+
+    def clearAndReselect(self):
+        # when data name changes, deselect and reselect in table
+        self.no_update = False
+
+        if self.component_mode:
+            model = self.model_components
+            mydict = self.component_dict
+        else:
+            model = self.model_subsets
+            mydict = self.subset_dict
+
+        selected = []
+
+        for i in range(0, len(self.selected_indices)):
+            item = model.itemFromIndex(self.selected_indices[i])
+            key = item.data()
+            selected.append(key)
+
+        # clear selection
+        self.noneClicked()
+
+        # Reselect
+        for i in range(0, len(selected)):
+            # Gets the key (the uuid) from the dict
+            key = selected[i]
+            # Gets the index using the component_dict
+            index = self.mydict[key]
+            # select the row
+            self.treeview.setCurrentIndex(index)
+
+
+    def subsetMessage(self, message):
+        print("subsetMessage:")
+        print("{0}".format(message))
+
+        print("dict: ")
+        if self.component_mode:
+            print(self.component_label_item)
+        else:
+            print(self.subset_label_item)
+
+        # Get subset name
+        index1 = str(message).index("Sent from: Subset: ") + len("Sent from: Subset: ")
+        index2 = str(message).index(" (data: ")
+        subset_name = str(message)[index1:index2]
 
         # Handle an updated subset state
         if "Updated subset_state" in str(message):
             # Redo the stats
-            # Get the subset that was updated
-            # index1 = str(message).index("Sent from: Subset: ") + len("Sent from: Subset: ")
-            # index2 = str(message).index(" (data: ")
-            # subset_name = str(message)[index1:index2]
-            uuid = message.sender.uuid
-            for i in range(0, len(self.dc.subset_groups)):
-                if self.dc.subset_groups[i].uuid == uuid:
-                    subset_name = self.dc.subset_groups[i].label
             self.subsetStateUpdate(subset_name)  
 
-        # Handle the rest of the cases by refreshing the treeview without changing values
+        # Handle an updated name change
+        if "Updated label" in str(message):
+            # handle updated name change
+            print("subset name has been updated")
+            # get new subset names
+            new_subs = []
+            for i in range(0, len(self.dc.subset_groups)):
+                new_subs.append(self.dc.subset_groups[i].label)
+
+                # Compare the new subsets to the old subsets
+                # Find what is in old that is no longer in new
+                old_label = np.setdiff1d(self.sub_names, new_subs)
+
+                # Save the subset names
+                self.sub_names = new_subs
+            print("old label: ", old_label)
+            print("new label: ", subset_name)
+            # iterate through keys in self.component_label_item or self.subset_label_item
+            # keys are labels of qtreeview items, values are an array of items with that label
+
+            # if the key contains the old label, change the key to the new label
+
+            # may also need to deselect and reselect indices to update the labels in the table
+            # can use self.clearAndReselect()
+            # deselect and reselect those indices to update the labels in the table
+
+
+    def dcMessage(self, message):
+        print("dcMessage:")
+        print("{0}".format(message))
+        # Not sure when this gets triggered
+
+
+    def layerMessage(self, message):
+        # Gets triggered when the color is changed
+        # icons need to be updated
+        # color in table changes automatically
+
+        # Update the icons in the tree
+        print("layerMessage:")
+
+        print("{0}".format(message))
+        if (self.component_mode):
+            # this technically works but is slow and inefficient
+            self.generateComponentView();
         else:
-            # Refresh the table and the treeview but don't change stat values
-            # selected_indices = self.treeview.selectionModel().selectedRows()
-            # TEST to see when selected indices is changing
-            selected_indices = self.selected_indices
-            # print("LENGTH OF SELECTED INDICES: ", len(selected_indices))
+            self.generateSubsetView();
+        # To do this more efficiently:
+        # get name of dataset or subset
 
-            if self.component_mode:
+        # iterate through keys in string label to item dict
+        # self.component_label_item and self.subset_label_item key treeview labels 
+        # to items in the treeview, but they won't catch all the components that have
+        # icons 
 
-                if "Updated label" in str(message):
-                    # Figure out what in the treeview is no longer in the dataset
-                    # For these items, key according to the new label
-                    # Subsets only
-
-                    # index1 = str(message).index("Sent from: Subset: ") + len("Sent from: Subset: ")
-                    # index2 = str(message).index(" (data: ")
-                    # # New name of subset
-
-                    uuid = message.sender.uuid
-                    for i in range(0, len(self.dc.subset_groups)):
-                        if self.dc.subset_groups[i].uuid == uuid:
-                            subset_name = self.dc.subset_groups[i].label
-                    subset_name = str(message)[index1:index2]
-
-                    # All new subsets
-                    new_subs = []
-                    for i in range(0, len(self.dc.subset_groups)):
-                        new_subs.append(self.dc.subset_groups[i].label)
-
-                    # Compare the new subsets to the old subsets
-                    # Find what is in old that is no longer in new
-                    old_label = np.setdiff1d(self.sub_names, new_subs)
-
-                    # Save the subset names
-                    self.sub_names = new_subs
-
-                    # Save the selected rows from the component view
-                    try:
-                        selected = dict()
-                        for i in range(0, len(selected_indices)):
-                            item = self.model_components.itemFromIndex(selected_indices[i])
-                            if item.row() != 0:
-                                if item.text() == old_label:
-                                # Use updated subset name
-                                    # key = subset_name + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-                                    key = item.parent().data()
-                                else: 
-                                    # key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-                                    key = item.parent().data()
-                                selected[key] = item.index()
-                            else:
-                                # key = item.text() + item.parent().text()
-                                key = item.parent().data()
-                                selected[key] = item.index() 
-                    except:
-                        pass
-
-                elif "DataUpdateMessage" in str(message):
-                    # print("RUNNING DATAUPDATEMESSAGE")
-                    # Update for an updated data label
-                    index1 = str(message).index("Data Set: ") + len("Data Set: ")
-                    index2 = str(message).index("Number of dimensions: ") - 1
-                    new_name = str(message)[index1:index2]
-
-                    new_names = self.dc.labels
-                    old_name = np.setdiff1d(self.data_names, new_names)[0]
-
-                    # Save the selected rows from the component view
-                    try:
-                        selected = dict()
-                        for i in range(0, len(selected_indices)):
-
-                            item = self.model_components.itemFromIndex(selected_indices[i])
-
-                            # if item.row() != 0:
-                            #     if item.parent().parent().text() == old_name:
-                            #         key = item.text() + " (" + new_name + ")"+ item.parent().text()
-                            #     else:
-                            #         key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-                            #     selected[key] = item.index()
-                            # else:
-                            #     if old_name in item.text():
-                            #         key = "All data (" + new_name + ")" + item.parent().text()
-                            #     else:
-                            #         key = item.text() + item.parent().text()
-                            #     selected[key] = item.index() 
-                            key = item.parent().data()
-                            selected[key] = item.index()
-                    except:
-                        pass
-
-                    # Update the labels
-                    self.data_names = self.dc.labels
-
-                elif "DataRenameComponentMessage" in str(message):
-                    # Update for an updated component name
-
-                    # Get the name of the dataset where the component was changed
-                    index1 = str(message).index("Data Set: ") + len("Data Set: ")
-                    index2 = str(message).index("Number of dimensions: ") - 1
-                    data_name = str(message)[index1:index2]
-
-                    # Get the index of that dataset
-                    # This will create problems if there is more than one dataset with the same name
-                    dataset = self.dc.labels.index(data_name)
-
-                    new_names = []
-                    # Get the new names of components
-                    for i in range(0, len(self.dc[dataset].components)):
-                        new_names.append(self.dc[dataset].components[i].label)
-
-                    # Use setdiff1d to get the old name
-                    old_name = np.setdiff1d(self.all_comp_names[dataset], new_names)[0]  
-                    # Use setdiff1d to get the new name
-                    new_name = np.setdiff1d(new_names, self.all_comp_names[dataset])[0]               
-
-                    # Go through key process to assign new keys to the rows that have the old name
-                    try:
-                        selected = dict()
-                        for i in range(0, len(selected_indices)):
-
-                            item = self.model_components.itemFromIndex(selected_indices[i])
-
-                            key = item.parent().data()
-                            selected[key] = item.index()
-                            # if item.row() != 0:
-                            #     if item.parent().text() == old_name:
-                            #         key = item.text() + " (" + item.parent().parent().text() + ")"+ new_name
-                            #     else:
-                            #         key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-                            #     selected[key] = item.index()
-                            # else:
-                            #     if item.parent().text() == old_name:
-                            #         key = item.text() + new_name
-                            #     else:
-                            #         key = item.text() + item.parent().text()
-                            #     selected[key] = item.index() 
-                    except:
-                        pass
-
-                    # Update the component labels 
-                    self.all_comp_names = []
-                    component_names = []
-                    for i in range(0, len(self.dc)):
-                        for j in range(0, len(self.dc[i].components)):
-                            component_names.append(self.dc[i].components[j].label)
-                        self.all_comp_names.append(component_names)
-                        component_names = []
+        # reset icon for any associated with that dataset or subset
 
 
-                else:
-                    # print("RUNNING LAST ELSE")
-                    # Save the selected rows from the component view
-                    try:
-                        selected = dict()
-                        for i in range(0, len(selected_indices)):
-                            item = self.model_components.itemFromIndex(selected_indices[i])
-                            # if item.row() != 0:
-                            #     key = item.text() + " (" + item.parent().parent().text() + ")"+ item.parent().text()
-                            #     selected[key] = item.index()
-                            # else:
-                            #     key = item.text() + item.parent().text()
-                            #     selected[key] = item.index() 
-                            key = item.parent().data()
-                            selected[key] = item.index()
-                    except:
-                        pass
+    def numDataMessage(self, message):
+        # Gets triggered when the numerical data is changed
+        # Can solve with similar approach as subsetStateUpdate
+        print("numDataMessage:")
+        print("{0}".format(message))
 
 
-                self.sortByComponents()
-                # Program will need to update the sort by subset tree next time it switches
-                self.updateSubsetSort = True
-                # Sort by components tree is up to date
-                self.updateComponentSort = False
-
-                # Select the correct rows 
-                for i in range(0, len(selected)):
-                    key = list(selected.keys())[i]
-                    index = self.component_dict[key]
-                    # print("selecting at line 1420")
-                    self.treeview.setCurrentIndex(index)               
-
-            # Sort by subsets cases
-            else:
-
-                if "Updated label" in str(message):
-                # Figure out what in the treeview is no longer in the dataset
-                # For these items, key according to the new label
-                # Subsets only
-
-                    index1 = str(message).index("Sent from: Subset: ") + len("Sent from: Subset: ")
-                    index2 = str(message).index(" (data: ")
-                    # New name of subset
-                    subset_name = str(message)[index1:index2]
-
-                    # All new subsets
-                    new_subs = []
-                    for i in range(0, len(self.dc.subset_groups)):
-                        new_subs.append(self.dc.subset_groups[i].label)
-
-                    # Compare the new subsets to the old subsets
-                    # Find what is in old that is no longer in new
-                    old_label = np.setdiff1d(self.sub_names, new_subs)
-
-                    # Save the subset names
-                    self.sub_names = new_subs
-
-                    # Save the selected rows from the component view
-                    try:
-                        selected = dict()
-                        for i in range(0, len(selected_indices)):
-                            item = self.model_subsets.itemFromIndex(selected_indices[i])
-                            key = item.data()
-                            selected[key] = item.index()
-                            # if item.parent().parent().text() == "Data":
-                            #     key =  "All data (" + item.parent().text() + ")" + item.text()
-                            #     selected[key] = item.index()
-                            # else:
-                            #     if item.parent().parent().text() == old_label:
-                            #         # Build the correct new key
-                            #         index1 = item.parent().text().index("(") - 1
-                            #         index2 = item.parent().text().index(")") + 1
-                            #         key = subset_name + item.parent().text()[index1:index2] + item.text()
-                            #     else:
-                            #         key = item.parent().text() + item.text()
-                            #     selected[key] = item.index()
-                    except:
-                        pass
-
-                elif "DataUpdateMessage" in str(message):
-                    # Update for an updated data label
-                    index1 = str(message).index("Data Set: ") + len("Data Set: ")
-                    index2 = str(message).index("Number of dimensions: ") - 1
-                    new_name = str(message)[index1:index2]
-
-                    new_names = self.dc.labels
-                    old_name = np.setdiff1d(self.data_names, new_names)[0]
-
-                    # Save the selected rows, use updated keys for updated data
-                    try:
-                        selected = dict()
-
-                        for i in range(0, len(selected_indices)):
-                            item = self.model_subsets.itemFromIndex(selected_indices[i])
-                            key = item.data()
-                            selected[key] = item.index()
-                            # if item.parent().parent().text() == "Data":
-                            #     if item.parent().text() == old_name:
-                            #         key = "All data (" + new_name + ")" + item.text()
-                            #     else: 
-                            #         key =  "All data (" + item.parent().text() + ")" + item.text()
-                            #     selected[key] = item.index()
-                            # else:
-                            #     if old_name in item.parent().text():
-                            #         key = item.parent().parent().text() + " (" + new_name + ")" + item.text()
-                            #     else:
-                            #         key = item.parent().text() + item.text()
-                            #     selected[key] = item.index()
-                    except:
-                        pass
-
-                    # Update the labels
-                    self.data_names = self.dc.labels
-
-                elif "DataRenameComponentMessage" in str(message):
-                    # Update for an updated component name
-
-                    # Get the name of the dataset where the component was changed
-                    index1 = str(message).index("Data Set: ") + len("Data Set: ")
-                    index2 = str(message).index("Number of dimensions: ") - 1
-                    data_name = str(message)[index1:index2]
-
-                    # Get the index of that dataset
-                    dataset = self.dc.labels.index(data_name)
-                    print(dataset, type(dataset))
-
-                    new_names = []
-                    # Get the new names of components
-                    for i in range(0, len(self.dc[dataset].components)):
-                        new_names.append(self.dc[dataset].components[i].label)
-
-                    print("new_names: ", new_names)
-
-                    # Use setdiff1d to get the old name
-                    old_name = np.setdiff1d(self.all_comp_names[dataset], new_names)[0]  
-                    print("old_name: ", old_name)
-                    # Use setdiff1d to get the new name
-                    new_name = np.setdiff1d(new_names, self.all_comp_names[dataset])[0]  
-                    print("new_name: ", new_name)                  
-
-                    # Go through key process to assign new keys to the rows that have the old name
-                    try:
-                        selected = dict()
-
-                        for i in range(0, len(selected_indices)):
-                            item = self.model_subsets.itemFromIndex(selected_indices[i])
-                            key = item.data()
-                            selected[key] = item.index()
-
-                            # if item.parent().parent().text() == "Data":
-                            #     if item.text() == old_name and item.parent().text() == self.dc[dataset].label:
-                            #         key = "All data (" + item.parent().text() + ")" + new_name
-                            #         # print("line 1395")
-                            #         # print(key)
-                            #     else:
-                            #         key = "All data (" + item.parent().text() + ")" + item.text()
-                            #     selected[key] = item.index()
-                            # else:
-                            #     if item.text() == old_name and item.parent().text() == self.dc[dataset].label:
-                            #         key = item.parent().text() + new_name
-                            #         # print("line 1403")
-                            #         # print(key)
-                            #     else:
-                            #         key = item.parent().text() + item.text()
-                            #     selected[key] = item.index()
-
-                    except:
-                        pass
-
-                    # Update the component labels 
-                    self.all_comp_names = []
-                    component_names = []
-                    for i in range(0, len(self.dc)):
-                        for j in range(0, len(self.dc[i].components)):
-                            component_names.append(self.dc[i].components[j].label)
-                        self.all_comp_names.append(component_names)
-                        component_names = []
-
-                else: 
-                # Save the selected rows from the subset view if applicable
-                    try:
-                        selected = dict()
-
-                        for i in range(0, len(selected_indices)):
-                            item = self.model_subsets.itemFromIndex(selected_indices[i])
-                            key = item.data()
-                            selected[key] = item.index()
-                            # if item.parent().parent().text() == "Data":
-                            #     key =  "All data (" + item.parent().text() + ")" + item.text()
-                            #     selected[key] = item.index()
-                            # else:
-                            #     key = item.parent().text() + item.text()
-                            #     selected[key] = item.index()
-                    except:
-                        pass
-
-                self.sortBySubsets()
-                # Program will need to update the sort by component tree next time it switches
-                self.updateComponentSort = True
-                # Sort by subsets tree is up to date
-                self.updateSubsetSort = False
-
-                # Select the correct rows 
-                for i in range(0, len(selected)):
-                    key = list(selected.keys())[i]
-                    index = self.subset_dict[key]
-                    # print("selecting at line 1584")
-                    self.treeview.setCurrentIndex(index)
-
-        self.no_update = True
-
+    # Note: an additional mess of code was down here that I deleted
+    # - had scraps of code that handled various other messaging situations. 
+    # Potentially useful as a reference: https://github.com/laurachapman/gluesummer/commit/0f42fca7bca1665c50659fa2a00b62a087ab2bb4
 
